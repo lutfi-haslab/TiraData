@@ -36,7 +36,7 @@ export function Sidebar() {
         <div className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center shrink-0">
           <Zap size={14} color="#fff" strokeWidth={2.5} />
         </div>
-        <span className="text-sm font-semibold tracking-wide text-slate-800 dark:text-slate-100">tiradata</span>
+        <span className="text-sm font-semibold tracking-wide text-slate-800 dark:text-slate-100">TiraData</span>
       </div>
 
       {/* Project Selector */}

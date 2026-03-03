@@ -154,7 +154,7 @@ function TracePreviewList({ service, name, from, to }: { service: string, name: 
   const count = data?.count ?? 0
 
   return (
-    <div className="mt-6">
+    <div>
       <div className="flex items-center justify-between mb-3 px-1">
         <div className="flex items-center gap-2">
           <Layers size={12} className="text-slate-400" />

@@ -1,8 +1,34 @@
-# ⚡ Tiradata
+# ⚡ TiraData
 
 > A lightweight, self-hosted alternative to **Datadog** and **Sentry**.  
 > Ingest logs, metrics, and traces — then query them with raw SQL.
 
+---
+
+<div align="center">
+<table>
+<tr>
+<td width="50%">
+<img src="screenshots/dashboard_image.png" alt="Dashboard" />
+<p align="center"><b>Operational Dashboard</b></p>
+</td>
+<td width="50%">
+<img src="screenshots/apm_image.png" alt="APM" />
+<p align="center"><b>APM & Performance</b></p>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<img src="screenshots/trace_viewer_image.png" alt="Trace Viewer" />
+<p align="center"><b>Distributed Tracing</b></p>
+</td>
+<td width="50%">
+<img src="screenshots/apidoc_image.png" alt="API Documentation" />
+<p align="center"><b>Interactive API Playground</b></p>
+</td>
+</tr>
+</table>
+</div>
 ---
 
 ## Why TiraData?
