@@ -64,6 +64,36 @@ export interface UserProject {
   createdAt: number
 }
 
+export interface ApmOperation {
+  name: string
+  requests: number
+  errors: number
+  errorRate: number
+  avgLatency: number
+  p50: number
+  p95: number
+  p99: number
+}
+
+export interface ApmService extends ApmOperation {
+  service: string
+  operations: ApmOperation[]
+}
+
+export interface ApmServicesResult {
+  services: ApmService[]
+  from: number
+  to: number
+  totalSpans: number
+}
+
+export interface ApmHistogramResult {
+  times: number[]
+  requests: number[]
+  errors: number[]
+  latencyHistogram: { bucket: number; count: number }[]
+}
+
 export interface ApiKey {
   key: string
   projectId: string
@@ -138,7 +168,7 @@ export const api = {
   metricNames: () =>
     apiFetch<{ data: string[] }>('/api/metrics/names'),
 
-  traces: (params: { trace_id?: string; from?: number; to?: number; limit?: number; offset?: number } = {}) => {
+  traces: (params: { trace_id?: string; service?: string; name?: string; from?: number; to?: number; limit?: number; offset?: number } = {}) => {
     const qs = new URLSearchParams()
     for (const [k, v] of Object.entries(params)) {
       if (v != null) qs.set(k, String(v))
@@ -154,6 +184,22 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sql }),
     }),
+
+  // ── APM ───────────────────────────────────────────────────────────────────
+  apmServices: (params: { from?: number; to?: number } = {}) => {
+    const qs = new URLSearchParams()
+    if (params.from) qs.set('from', String(params.from))
+    if (params.to)   qs.set('to',   String(params.to))
+    return apiFetch<ApmServicesResult>(`/api/apm/services?${qs}`)
+  },
+
+  apmHistogram: (params: { service?: string; from?: number; to?: number } = {}) => {
+    const qs = new URLSearchParams()
+    if (params.service) qs.set('service', params.service)
+    if (params.from)    qs.set('from', String(params.from))
+    if (params.to)      qs.set('to',   String(params.to))
+    return apiFetch<ApmHistogramResult>(`/api/apm/histogram?${qs}`)
+  },
 
   ingestLog:    (payload: unknown) =>
     apiFetch('/api/ingest/log', {

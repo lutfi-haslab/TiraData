@@ -242,6 +242,8 @@ export const createServer = async () => {
     const result = await _store!.queryTraces({
       projectId: pid,
       trace_id: q.trace_id,
+      service: q.service,
+      name: q.name,
       from: q.from ? Number(q.from) : undefined,
       to: q.to ? Number(q.to) : undefined,
       limit: q.limit ? Number(q.limit) : 200,
@@ -250,6 +252,84 @@ export const createServer = async () => {
 
     queryCache.set(cacheKey, result)
     return c.json(result)
+  })
+
+  app.get('/api/apm/services', async (c) => {
+    const q = c.req.query()
+    const pid = getPID(c)
+    const from = q.from ? Number(q.from) : Date.now() - 3_600_000
+    const to   = q.to   ? Number(q.to)   : Date.now()
+    const result = await _store!.queryTraces({ projectId: pid, from, to, limit: 5000, offset: 0 })
+    const spans = result.data
+
+    interface OpStats { count: number; totalDuration: number; errors: number; durations: number[] }
+    interface SvcStats { service: string; requests: number; errors: number; totalDuration: number; durations: number[]; operations: Map<string, OpStats> }
+
+    const services = new Map<string, SvcStats>()
+    for (const span of spans) {
+      const svc = (span.attributes as any)?.['service.name'] || 'unknown'
+      const isError = !!(span.attributes as any)?.['error'] || Number((span.attributes as any)?.['http.status_code']) >= 500
+      if (!services.has(svc)) services.set(svc, { service: svc, requests: 0, errors: 0, totalDuration: 0, durations: [], operations: new Map() })
+      const s = services.get(svc)!
+      s.requests++; if (isError) s.errors++; s.totalDuration += span.duration; s.durations.push(span.duration)
+      if (!s.operations.has(span.name)) s.operations.set(span.name, { count: 0, totalDuration: 0, errors: 0, durations: [] })
+      const op = s.operations.get(span.name)!
+      op.count++; op.totalDuration += span.duration; if (isError) op.errors++; op.durations.push(span.duration)
+    }
+
+    const pct = (arr: number[], p: number) => {
+      if (!arr.length) return 0
+      const sorted = [...arr].sort((a, b) => a - b)
+      return sorted[Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)]
+    }
+
+    const out = [...services.values()].map(s => ({
+      service: s.service, requests: s.requests, errors: s.errors,
+      errorRate: s.requests > 0 ? s.errors / s.requests : 0,
+      avgLatency: s.requests > 0 ? s.totalDuration / s.requests : 0,
+      p50: pct(s.durations, 50), p95: pct(s.durations, 95), p99: pct(s.durations, 99),
+      operations: [...s.operations.entries()].map(([name, op]) => ({
+        name, requests: op.count, errors: op.errors,
+        errorRate: op.count > 0 ? op.errors / op.count : 0,
+        avgLatency: op.count > 0 ? op.totalDuration / op.count : 0,
+        p50: pct(op.durations, 50), p95: pct(op.durations, 95), p99: pct(op.durations, 99),
+      })).sort((a, b) => b.requests - a.requests)
+    })).sort((a, b) => b.requests - a.requests)
+
+    return c.json({ services: out, from, to, totalSpans: spans.length })
+  })
+
+  app.get('/api/apm/histogram', async (c) => {
+    const q = c.req.query()
+    const pid = getPID(c)
+    const from = q.from ? Number(q.from) : Date.now() - 3_600_000
+    const to   = q.to   ? Number(q.to)   : Date.now()
+    const service = q.service
+
+    const result = await _store!.queryTraces({ projectId: pid, from, to, limit: 5000, offset: 0 })
+    let spans = result.data
+    if (service) spans = spans.filter(s => (s.attributes as any)?.['service.name'] === service)
+
+    const buckets = 24
+    const bucketMs = Math.max(1, (to - from) / buckets)
+    const reqBuckets = Array(buckets).fill(0)
+    const errBuckets = Array(buckets).fill(0)
+    for (const span of spans) {
+      const idx = Math.min(buckets - 1, Math.floor((span.start_time - from) / bucketMs))
+      if (idx >= 0) { reqBuckets[idx]++; if ((span.attributes as any)?.['error']) errBuckets[idx]++ }
+    }
+    const times = Array.from({ length: buckets }, (_, i) => from + i * bucketMs)
+
+    const latencyBucketMs = 50
+    const maxLatency = Math.max(...spans.map(s => s.duration), 500)
+    const numBkts = Math.min(40, Math.ceil(maxLatency / latencyBucketMs))
+    const latencyHistogram = Array.from({ length: numBkts }, (_, i) => ({ bucket: i * latencyBucketMs, count: 0 }))
+    for (const span of spans) {
+      const b = Math.min(numBkts - 1, Math.floor(span.duration / latencyBucketMs))
+      if (b >= 0) latencyHistogram[b].count++
+    }
+
+    return c.json({ times, requests: reqBuckets, errors: errBuckets, latencyHistogram })
   })
 
   app.post('/api/query/sql', async (c) => {

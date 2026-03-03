@@ -31,6 +31,8 @@ export interface MetricQueryParams {
 
 export interface TraceQueryParams {
   trace_id?: string
+  service?: string
+  name?: string
   from?: number
   to?: number
   limit?: number

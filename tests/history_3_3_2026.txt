@@ -5,55 +5,55 @@ tests/phase4/alerting.test.ts:
 [tiradata] storage: SQLite (:memory:)
 [Queue] Using In-Memory Ring Buffer
 <-- POST /api/alerts/rules
---> POST /api/alerts/rules 200 3ms
+--> POST /api/alerts/rules 200 6ms
 <-- GET /api/alerts/rules
 --> GET /api/alerts/rules 200 1ms
-✓ Phase 4 – Alerting Engine > can create and list alert rules [9.82ms]
+✓ Phase 4 – Alerting Engine > can create and list alert rules [11.66ms]
 <-- POST /api/ingest/metric
 --> POST /api/ingest/metric 202 0ms
 <-- GET /api/alerts/history
+--> GET /api/alerts/history 200 3ms
+<-- GET /api/alerts/history
+--> GET /api/alerts/history 200 1ms
+<-- GET /api/alerts/history
 --> GET /api/alerts/history 200 1ms
 <-- GET /api/alerts/history
 --> GET /api/alerts/history 200 1ms
 <-- GET /api/alerts/history
---> GET /api/alerts/history 200 2ms
-<-- GET /api/alerts/history
---> GET /api/alerts/history 200 2ms
+--> GET /api/alerts/history 200 0ms
 <-- GET /api/alerts/history
 --> GET /api/alerts/history 200 1ms
-<-- GET /api/alerts/history
---> GET /api/alerts/history 200 4ms
-✓ Phase 4 – Alerting Engine > evaluates alerts and records history [3630.48ms]
+✓ Phase 4 – Alerting Engine > evaluates alerts and records history [3624.17ms]
 
 tests/phase4/service-map.test.ts:
 [tiradata] storage: SQLite (:memory:)
 [Queue] Using In-Memory Ring Buffer
 <-- POST /v1/traces
---> POST /v1/traces 200 0ms
+--> POST /v1/traces 200 5ms
 <-- POST /v1/traces
 --> POST /v1/traces 200 0ms
 <-- GET /api/query/service-map
 --> GET /api/query/service-map 200 1ms
-✓ Phase 4 – Service Map Visualization > generates service map edges from traces [403.30ms]
+✓ Phase 4 – Service Map Visualization > generates service map edges from traces [408.93ms]
 
 tests/phase4/ws-tail.test.ts:
 [tiradata] storage: SQLite (:memory:)
 [Queue] Using In-Memory Ring Buffer
 <-- GET /ws/tail?key=master_tail_test
 [WS] Tail connected
---> GET /ws/tail?key=master_tail_test 200 1ms
+--> GET /ws/tail?key=master_tail_test 200 3ms
 <-- POST /api/ingest/log?key=master_tail_test
---> POST /api/ingest/log?key=master_tail_test 202 0ms
-✓ Phase 4 – Live Log Tailing (WebSocket) > receives logs in real-time via WebSocket [210.53ms]
+--> POST /api/ingest/log?key=master_tail_test 202 1ms
+✓ Phase 4 – Live Log Tailing (WebSocket) > receives logs in real-time via WebSocket [214.34ms]
 [WS] Tail disconnected
 <-- GET /ws/tail?key=master_tail_test&service=target-svc
 [WS] Tail connected
---> GET /ws/tail?key=master_tail_test&service=target-svc 200 1ms
+--> GET /ws/tail?key=master_tail_test&service=target-svc 200 0ms
 <-- POST /api/ingest/log?key=master_tail_test
 --> POST /api/ingest/log?key=master_tail_test 202 0ms
 <-- POST /api/ingest/log?key=master_tail_test
---> POST /api/ingest/log?key=master_tail_test 202 1ms
-✓ Phase 4 – Live Log Tailing (WebSocket) > respects server-side filtering (service) [206.25ms]
+--> POST /api/ingest/log?key=master_tail_test 202 0ms
+✓ Phase 4 – Live Log Tailing (WebSocket) > respects server-side filtering (service) [206.65ms]
 
 tests/phase3/otlp.test.ts:
 [WS] Tail disconnected
@@ -62,18 +62,18 @@ tests/phase3/otlp.test.ts:
 <-- POST /v1/logs
 --> POST /v1/logs 200 0ms
 <-- GET /api/logs?service=test-service
---> GET /api/logs?service=test-service 200 1ms
-✓ Phase 3 – OTLP (OpenTelemetry) Ingestion > maps and ingests OTLP Logs [403.52ms]
+--> GET /api/logs?service=test-service 200 2ms
+✓ Phase 3 – OTLP (OpenTelemetry) Ingestion > maps and ingests OTLP Logs [406.44ms]
 <-- POST /v1/metrics
---> POST /v1/metrics 200 0ms
+--> POST /v1/metrics 200 1ms
 <-- GET /api/metrics?name=cpu_usage
---> GET /api/metrics?name=cpu_usage 200 1ms
-✓ Phase 3 – OTLP (OpenTelemetry) Ingestion > maps and ingests OTLP Metrics [403.75ms]
+--> GET /api/metrics?name=cpu_usage 200 3ms
+✓ Phase 3 – OTLP (OpenTelemetry) Ingestion > maps and ingests OTLP Metrics [405.48ms]
 <-- POST /v1/traces
 --> POST /v1/traces 200 0ms
 <-- GET /api/traces?trace_id=trace-1
---> GET /api/traces?trace_id=trace-1 200 2ms
-✓ Phase 3 – OTLP (OpenTelemetry) Ingestion > maps and ingests OTLP Traces [404.15ms]
+--> GET /api/traces?trace_id=trace-1 200 3ms
+✓ Phase 3 – OTLP (OpenTelemetry) Ingestion > maps and ingests OTLP Traces [405.04ms]
 
 tests/phase3/cache.test.ts:
 [tiradata] storage: SQLite (:memory:)
@@ -83,101 +83,101 @@ tests/phase3/cache.test.ts:
 <-- POST /api/ingest/log
 --> POST /api/ingest/log 202 0ms
 <-- GET /api/logs?service=cache-test
---> GET /api/logs?service=cache-test 200 1ms
-✓ Phase 3 – Query Caching > caches the result of a log query [404.05ms]
+--> GET /api/logs?service=cache-test 200 0ms
+✓ Phase 3 – Query Caching > caches the result of a log query [406.10ms]
 <-- GET /api/logs?service=cache-test
 --> GET /api/logs?service=cache-test 200 1ms
-✓ Phase 3 – Query Caching > expires the cache after TTL [1.61ms]
+✓ Phase 3 – Query Caching > expires the cache after TTL [2.37ms]
 <-- POST /api/query/sql
---> POST /api/query/sql 200 1ms
+--> POST /api/query/sql 200 2ms
 <-- POST /api/ingest/log
---> POST /api/ingest/log 202 0ms
+--> POST /api/ingest/log 202 1ms
 <-- POST /api/query/sql
 --> POST /api/query/sql 200 1ms
-✓ Phase 3 – Query Caching > caches SQL editor queries [403.42ms]
+✓ Phase 3 – Query Caching > caches SQL editor queries [405.33ms]
 
 tests/phase3/api-security.test.ts:
 [tiradata] storage: SQLite (:memory:)
 [Queue] Using In-Memory Ring Buffer
 <-- GET /api/logs
 --> GET /api/logs 401 0ms
-✓ Phase 3 – API Security (RBAC) > Unauthorized access > returns 401 when no key is provided [2.30ms]
+✓ Phase 3 – API Security (RBAC) > Unauthorized access > returns 401 when no key is provided [2.16ms]
 <-- GET /api/logs?key=wrong_key
---> GET /api/logs?key=wrong_key 403 5ms
-✓ Phase 3 – API Security (RBAC) > Unauthorized access > returns 403 with invalid key [5.49ms]
+--> GET /api/logs?key=wrong_key 403 1ms
+✓ Phase 3 – API Security (RBAC) > Unauthorized access > returns 403 with invalid key [1.20ms]
 <-- POST /api/ingest/log?key=test_ingest
---> POST /api/ingest/log?key=test_ingest 202 1ms
-✓ Phase 3 – API Security (RBAC) > Ingest Key access > allows ingestion with ingest key [2.68ms]
+--> POST /api/ingest/log?key=test_ingest 202 0ms
+✓ Phase 3 – API Security (RBAC) > Ingest Key access > allows ingestion with ingest key [0.73ms]
 <-- GET /api/logs?key=test_ingest
 --> GET /api/logs?key=test_ingest 403 1ms
-✓ Phase 3 – API Security (RBAC) > Ingest Key access > forbids querying with ingest key [1.07ms]
+✓ Phase 3 – API Security (RBAC) > Ingest Key access > forbids querying with ingest key [0.58ms]
 <-- GET /api/admin/config?key=test_ingest
---> GET /api/admin/config?key=test_ingest 403 1ms
-✓ Phase 3 – API Security (RBAC) > Ingest Key access > forbids admin operations with ingest key [0.77ms]
+--> GET /api/admin/config?key=test_ingest 403 0ms
+✓ Phase 3 – API Security (RBAC) > Ingest Key access > forbids admin operations with ingest key [0.38ms]
 <-- GET /api/logs?key=test_master
 --> GET /api/logs?key=test_master 200 0ms
-✓ Phase 3 – API Security (RBAC) > Master Key access > allows querying with master key [0.84ms]
+✓ Phase 3 – API Security (RBAC) > Master Key access > allows querying with master key [0.92ms]
 <-- GET /api/admin/config?key=test_master
---> GET /api/admin/config?key=test_master 200 0ms
-✓ Phase 3 – API Security (RBAC) > Master Key access > allows admin operations with master key [0.45ms]
+--> GET /api/admin/config?key=test_master 200 1ms
+✓ Phase 3 – API Security (RBAC) > Master Key access > allows admin operations with master key [0.51ms]
 <-- POST /api/ingest/log?key=test_master
 --> POST /api/ingest/log?key=test_master 202 0ms
-✓ Phase 3 – API Security (RBAC) > Master Key access > allows ingestion with master key [0.19ms]
+✓ Phase 3 – API Security (RBAC) > Master Key access > allows ingestion with master key [0.44ms]
 <-- POST /v1/logs?key=test_ingest
---> POST /v1/logs?key=test_ingest 200 0ms
-✓ Phase 3 – API Security (RBAC) > OTLP Security > allows OTLP ingestion with ingest key [0.26ms]
+--> POST /v1/logs?key=test_ingest 200 1ms
+✓ Phase 3 – API Security (RBAC) > OTLP Security > allows OTLP ingestion with ingest key [0.70ms]
 <-- POST /v1/logs
 --> POST /v1/logs 401 0ms
-✓ Phase 3 – API Security (RBAC) > OTLP Security > forbids OTLP ingestion without key [0.05ms]
+✓ Phase 3 – API Security (RBAC) > OTLP Security > forbids OTLP ingestion without key [0.06ms]
 
 tests/phase2/api-admin.test.ts:
 [tiradata] storage: SQLite (:memory:)
 [Queue] Using In-Memory Ring Buffer
 <-- GET /api/admin/config
---> GET /api/admin/config 200 0ms
-✓ GET /api/admin/config > returns 200 with adapter and queue info [0.44ms]
+--> GET /api/admin/config 200 1ms
+✓ GET /api/admin/config > returns 200 with adapter and queue info [1.36ms]
 <-- GET /api/admin/config
 --> GET /api/admin/config 200 0ms
-✓ GET /api/admin/config > reports 0 dropped items on fresh start [0.06ms]
+✓ GET /api/admin/config > reports 0 dropped items on fresh start [0.10ms]
 <-- POST /api/admin/optimize
 --> POST /api/admin/optimize 200 1ms
-✓ POST /api/admin/optimize > returns 200 with success and durationMs [1.32ms]
+✓ POST /api/admin/optimize > returns 200 with success and durationMs [1.80ms]
 <-- POST /api/admin/optimize
 --> POST /api/admin/optimize 200 0ms
-✓ POST /api/admin/optimize > is idempotent — second call also succeeds [0.49ms]
+✓ POST /api/admin/optimize > is idempotent — second call also succeeds [0.88ms]
 <-- POST /api/admin/ttl/run
 --> POST /api/admin/ttl/run 200 1ms
-✓ POST /api/admin/ttl/run > returns 200 with deleted counts [0.39ms]
+✓ POST /api/admin/ttl/run > returns 200 with deleted counts [0.66ms]
 <-- POST /api/admin/ttl/run
 --> POST /api/admin/ttl/run 200 0ms
-✓ POST /api/admin/ttl/run > returns retention config used [0.27ms]
+✓ POST /api/admin/ttl/run > returns retention config used [0.40ms]
 <-- POST /api/admin/ttl/run
 --> POST /api/admin/ttl/run 200 0ms
-✓ POST /api/admin/ttl/run > accepts custom retention overrides in body [0.11ms]
+✓ POST /api/admin/ttl/run > accepts custom retention overrides in body [0.20ms]
 <-- POST /api/ingest/log
 --> POST /api/ingest/log 202 0ms
 <-- POST /api/admin/ttl/run
 --> POST /api/admin/ttl/run 200 1ms
-✓ POST /api/admin/ttl/run > deletes old data and leaves new data intact [357.31ms]
+✓ POST /api/admin/ttl/run > deletes old data and leaves new data intact [352.89ms]
 <-- POST /api/ingest/log
 --> POST /api/ingest/log 202 0ms
 <-- GET /api/logs?service=pipeline-test
---> GET /api/logs?service=pipeline-test 200 7ms
+--> GET /api/logs?service=pipeline-test 200 2ms
 <-- GET /api/stats
---> GET /api/stats 200 4ms
-✓ Phase 2 – full pipeline via HTTP (ingest → TTL → verify) > ingests data, runs TTL, confirms old data removed [365.57ms]
+--> GET /api/stats 200 2ms
+✓ Phase 2 – full pipeline via HTTP (ingest → TTL → verify) > ingests data, runs TTL, confirms old data removed [356.89ms]
 <-- POST /api/ingest/log
 --> POST /api/ingest/log 202 0ms
 <-- POST /api/admin/optimize
---> POST /api/admin/optimize 200 2ms
+--> POST /api/admin/optimize 200 1ms
 <-- GET /api/logs?service=vacuum-test
---> GET /api/logs?service=vacuum-test 200 1ms
-✓ Phase 2 – full pipeline via HTTP (ingest → TTL → verify) > optimize + query on same store does not corrupt data [357.51ms]
+--> GET /api/logs?service=vacuum-test 200 0ms
+✓ Phase 2 – full pipeline via HTTP (ingest → TTL → verify) > optimize + query on same store does not corrupt data [352.97ms]
 <-- GET /api/admin/config
 --> GET /api/admin/config 200 0ms
 <-- GET /api/admin/config
---> GET /api/admin/config 200 1ms
-✓ Phase 2 – full pipeline via HTTP (ingest → TTL → verify) > admin config reflects queue state after ingestion [352.41ms]
+--> GET /api/admin/config 200 0ms
+✓ Phase 2 – full pipeline via HTTP (ingest → TTL → verify) > admin config reflects queue state after ingestion [352.08ms]
 
 tests/phase2/verify-wal.test.ts:
 --- Step 1: Populate WAL with items ---
@@ -188,178 +188,203 @@ tests/phase2/verify-wal.test.ts:
 ✅ Crash recovery successful! Recovered 2 items.
 
 tests/phase2/sqlite-store.test.ts:
-✓ SqliteStore (Drizzle) – combined filters > combines service + level filters (AND) [2.64ms]
-✓ SqliteStore (Drizzle) – combined filters > combines name + time filters for metrics [2.10ms]
-✓ SqliteStore (Drizzle) – combined filters > combines trace_id + time range filter [1.02ms]
-✓ SqliteStore (Drizzle) – pagination > offset works for logs [2.13ms]
-✓ SqliteStore (Drizzle) – pagination > clamps limit to max 1000 for logs [1.71ms]
-✓ SqliteStore – optimize() > returns durationMs [1.39ms]
-✓ SqliteStore – optimize() > does not corrupt data after VACUUM [1.60ms]
-✓ SqliteStore – optimize() > can be called multiple times safely [2.11ms]
-✓ SqliteStore – deleteBefore() TTL > deletes logs older than cutoff [1.78ms]
-✓ SqliteStore – deleteBefore() TTL > deletes metrics older than cutoff [0.81ms]
-✓ SqliteStore – deleteBefore() TTL > deletes traces older than cutoff [0.87ms]
-✓ SqliteStore – deleteBefore() TTL > handles all three TTL types in one call [0.69ms]
-✓ SqliteStore – deleteBefore() TTL > returns 0 deletes when nothing matches cutoff [0.65ms]
-✓ SqliteStore – deleteBefore() TTL > is idempotent — second delete returns 0 [0.66ms]
-✓ SqliteStore – deleteBefore() TTL > skips undefined params (only deletes what is specified) [0.72ms]
+✓ SqliteStore (Drizzle) – combined filters > combines service + level filters (AND) [2.45ms]
+✓ SqliteStore (Drizzle) – combined filters > combines name + time filters for metrics [1.99ms]
+✓ SqliteStore (Drizzle) – combined filters > combines trace_id + time range filter [1.22ms]
+✓ SqliteStore (Drizzle) – pagination > offset works for logs [1.85ms]
+✓ SqliteStore (Drizzle) – pagination > clamps limit to max 1000 for logs [1.31ms]
+✓ SqliteStore – optimize() > returns durationMs [1.18ms]
+✓ SqliteStore – optimize() > does not corrupt data after VACUUM [2.44ms]
+✓ SqliteStore – optimize() > can be called multiple times safely [1.93ms]
+✓ SqliteStore – deleteBefore() TTL > deletes logs older than cutoff [1.04ms]
+✓ SqliteStore – deleteBefore() TTL > deletes metrics older than cutoff [0.76ms]
+✓ SqliteStore – deleteBefore() TTL > deletes traces older than cutoff [0.95ms]
+✓ SqliteStore – deleteBefore() TTL > handles all three TTL types in one call [0.78ms]
+✓ SqliteStore – deleteBefore() TTL > returns 0 deletes when nothing matches cutoff [0.59ms]
+✓ SqliteStore – deleteBefore() TTL > is idempotent — second delete returns 0 [0.59ms]
+✓ SqliteStore – deleteBefore() TTL > skips undefined params (only deletes what is specified) [0.97ms]
+
+tests/phase5/apm.test.ts:
+[tiradata] storage: SQLite (:memory:)
+[Queue] Using In-Memory Ring Buffer
+<-- POST /api/ingest/trace
+--> POST /api/ingest/trace 202 0ms
+✓ Phase 5 – APM & Distributed Tracing > ingests traces correctly [501.27ms]
+<-- POST /api/ingest/trace
+--> POST /api/ingest/trace 202 0ms
+<-- GET /api/traces?service=db-proxy
+--> GET /api/traces?service=db-proxy 200 1ms
+<-- GET /api/traces?service=test-service
+--> GET /api/traces?service=test-service 200 0ms
+✓ Phase 5 – APM & Distributed Tracing > filters traces by service name (JSON attribute) [503.08ms]
+<-- GET /api/traces?name=SELECT%20*
+--> GET /api/traces?name=SELECT%20* 200 0ms
+✓ Phase 5 – APM & Distributed Tracing > filters traces by operation name [0.65ms]
+<-- POST /api/ingest/trace
+--> POST /api/ingest/trace 202 0ms
+<-- GET /api/traces?from=1772529336061&to=1772529936061
+--> GET /api/traces?from=1772529336061&to=1772529936061 200 6ms
+✓ Phase 5 – APM & Distributed Tracing > handles time range filtering [507.15ms]
+<-- GET /api/traces?limit=1
+--> GET /api/traces?limit=1 200 1ms
+✓ Phase 5 – APM & Distributed Tracing > supports limit and offset [2.04ms]
 
 tests/phase5/auth-and-sharing.test.ts:
 [tiradata] storage: SQLite (:memory:)
 [Queue] Using In-Memory Ring Buffer
 <-- POST /api/auth/signup
---> POST /api/auth/signup 400 0ms
-✓ Phase 5 – Auth: Signup & Login > rejects signup with missing fields [1.46ms]
+--> POST /api/auth/signup 400 3ms
+✓ Phase 5 – Auth: Signup & Login > rejects signup with missing fields [19.74ms]
 <-- POST /api/auth/signup
---> POST /api/auth/signup 201 59ms
-✓ Phase 5 – Auth: Signup & Login > creates a new user via signup [58.81ms]
+--> POST /api/auth/signup 201 181ms
+✓ Phase 5 – Auth: Signup & Login > creates a new user via signup [181.99ms]
 <-- POST /api/auth/signup
---> POST /api/auth/signup 201 50ms
+--> POST /api/auth/signup 201 55ms
 <-- POST /api/auth/signup
 --> POST /api/auth/signup 409 0ms
-✓ Phase 5 – Auth: Signup & Login > rejects duplicate signup for the same email [50.34ms]
+✓ Phase 5 – Auth: Signup & Login > rejects duplicate signup for the same email [55.57ms]
 <-- POST /api/auth/login
---> POST /api/auth/login 401 49ms
-✓ Phase 5 – Auth: Signup & Login > rejects login with wrong password [49.43ms]
+--> POST /api/auth/login 401 52ms
+✓ Phase 5 – Auth: Signup & Login > rejects login with wrong password [51.61ms]
 <-- POST /api/auth/login
 --> POST /api/auth/login 401 0ms
-✓ Phase 5 – Auth: Signup & Login > rejects login for unknown email [0.38ms]
+✓ Phase 5 – Auth: Signup & Login > rejects login for unknown email [0.39ms]
 <-- POST /api/auth/login
---> POST /api/auth/login 200 51ms
-✓ Phase 5 – Auth: Signup & Login > logs in successfully with correct credentials [50.61ms]
+--> POST /api/auth/login 200 50ms
+✓ Phase 5 – Auth: Signup & Login > logs in successfully with correct credentials [50.09ms]
 <-- POST /api/auth/signup
 --> POST /api/auth/signup 201 50ms
 <-- GET /api/auth/me
 --> GET /api/auth/me 200 2ms
-✓ Phase 5 – Auth: JWT Session (/api/auth/me) > returns the current user with a valid JWT [1.63ms]
+✓ Phase 5 – Auth: JWT Session (/api/auth/me) > returns the current user with a valid JWT [1.97ms]
 <-- GET /api/auth/me
 --> GET /api/auth/me 401 0ms
-✓ Phase 5 – Auth: JWT Session (/api/auth/me) > returns 401 without any auth [0.10ms]
+✓ Phase 5 – Auth: JWT Session (/api/auth/me) > returns 401 without any auth [0.09ms]
 <-- GET /api/auth/me
 --> GET /api/auth/me 401 1ms
-✓ Phase 5 – Auth: JWT Session (/api/auth/me) > returns 403 with an invalid JWT [1.16ms]
+✓ Phase 5 – Auth: JWT Session (/api/auth/me) > returns 403 with an invalid JWT [1.24ms]
 <-- GET /api/logs
 --> GET /api/logs 401 0ms
-✓ Phase 5 – Auth: Protected Routes Require Auth > blocked from /api/logs without auth [0.05ms]
+✓ Phase 5 – Auth: Protected Routes Require Auth > blocked from /api/logs without auth [0.03ms]
 <-- GET /api/logs
 --> GET /api/logs 200 0ms
-✓ Phase 5 – Auth: Protected Routes Require Auth > allowed on /api/logs with master key [0.24ms]
-<-- POST /api/auth/signup
---> POST /api/auth/signup 201 52ms
-<-- GET /api/logs
---> GET /api/logs 200 0ms
-✓ Phase 5 – Auth: Protected Routes Require Auth > allowed on /api/logs with valid JWT [52.10ms]
+✓ Phase 5 – Auth: Protected Routes Require Auth > allowed on /api/logs with master key [0.10ms]
 <-- POST /api/auth/signup
 --> POST /api/auth/signup 201 50ms
-<-- POST /api/admin/projects
---> POST /api/admin/projects 200 1ms
+<-- GET /api/logs
+--> GET /api/logs 200 0ms
+✓ Phase 5 – Auth: Protected Routes Require Auth > allowed on /api/logs with valid JWT [49.81ms]
 <-- POST /api/auth/signup
 --> POST /api/auth/signup 201 49ms
-<-- POST /api/admin/projects/e541184b-c437-42bc-b503-fbe6da9ae360/share
---> POST /api/admin/projects/e541184b-c437-42bc-b503-fbe6da9ae360/share 200 1ms
+<-- POST /api/admin/projects
+--> POST /api/admin/projects 200 0ms
+<-- POST /api/auth/signup
+--> POST /api/auth/signup 201 49ms
+<-- POST /api/admin/projects/b90acbb5-e698-4ab0-8dbe-ed3e8921998c/share
+--> POST /api/admin/projects/b90acbb5-e698-4ab0-8dbe-ed3e8921998c/share 200 0ms
 ✓ Phase 5 – Project Sharing > shares project with another user by email [0.57ms]
-<-- POST /api/admin/projects/e541184b-c437-42bc-b503-fbe6da9ae360/share
---> POST /api/admin/projects/e541184b-c437-42bc-b503-fbe6da9ae360/share 404 0ms
-✓ Phase 5 – Project Sharing > returns 404 when sharing with an unknown email [0.13ms]
-<-- POST /api/admin/projects/e541184b-c437-42bc-b503-fbe6da9ae360/share
---> POST /api/admin/projects/e541184b-c437-42bc-b503-fbe6da9ae360/share 200 0ms
-<-- GET /api/admin/projects/e541184b-c437-42bc-b503-fbe6da9ae360/users
---> GET /api/admin/projects/e541184b-c437-42bc-b503-fbe6da9ae360/users 200 0ms
-✓ Phase 5 – Project Sharing > lists project members after a share [0.38ms]
-<-- POST /api/admin/projects/e541184b-c437-42bc-b503-fbe6da9ae360/share
---> POST /api/admin/projects/e541184b-c437-42bc-b503-fbe6da9ae360/share 200 1ms
-✓ Phase 5 – Project Sharing > rejects project share request from non-admin user [0.15ms]
+<-- POST /api/admin/projects/b90acbb5-e698-4ab0-8dbe-ed3e8921998c/share
+--> POST /api/admin/projects/b90acbb5-e698-4ab0-8dbe-ed3e8921998c/share 404 1ms
+✓ Phase 5 – Project Sharing > returns 404 when sharing with an unknown email [0.12ms]
+<-- POST /api/admin/projects/b90acbb5-e698-4ab0-8dbe-ed3e8921998c/share
+--> POST /api/admin/projects/b90acbb5-e698-4ab0-8dbe-ed3e8921998c/share 200 0ms
+<-- GET /api/admin/projects/b90acbb5-e698-4ab0-8dbe-ed3e8921998c/users
+--> GET /api/admin/projects/b90acbb5-e698-4ab0-8dbe-ed3e8921998c/users 200 0ms
+✓ Phase 5 – Project Sharing > lists project members after a share [0.39ms]
+<-- POST /api/admin/projects/b90acbb5-e698-4ab0-8dbe-ed3e8921998c/share
+--> POST /api/admin/projects/b90acbb5-e698-4ab0-8dbe-ed3e8921998c/share 200 0ms
+✓ Phase 5 – Project Sharing > rejects project share request from non-admin user [0.21ms]
 <-- POST /api/query/sql
 --> POST /api/query/sql 200 0ms
-✓ Phase 5 – SQL Editor Project Isolation > blocks querying system tables (users) [0.07ms]
+✓ Phase 5 – SQL Editor Project Isolation > blocks querying system tables (users) [0.14ms]
 <-- POST /api/query/sql
 --> POST /api/query/sql 400 0ms
-✓ Phase 5 – SQL Editor Project Isolation > rejects non-SELECT statements [0.14ms]
+✓ Phase 5 – SQL Editor Project Isolation > rejects non-SELECT statements [0.11ms]
 <-- POST /api/query/sql
 --> POST /api/query/sql 400 0ms
-✓ Phase 5 – SQL Editor Project Isolation > rejects missing sql field [0.05ms]
+✓ Phase 5 – SQL Editor Project Isolation > rejects missing sql field [0.06ms]
 
 tests/phase1/ring-buffer.test.ts:
-✓ RingBuffer > starts empty [0.32ms]
-✓ RingBuffer > enqueues and dequeues a single item [0.21ms]
+✓ RingBuffer > starts empty
+✓ RingBuffer > enqueues and dequeues a single item [0.57ms]
 ✓ RingBuffer > dequeues items in FIFO order [0.04ms]
-✓ RingBuffer > dequeueMany respects max limit [0.01ms]
+✓ RingBuffer > dequeueMany respects max limit
 ✓ RingBuffer > dequeueMany on empty buffer returns [] [0.02ms]
 ✓ RingBuffer > returns false when full [0.02ms]
-✓ RingBuffer > increments droppedCount on overflow [0.02ms]
+✓ RingBuffer > increments droppedCount on overflow [0.01ms]
 ✓ RingBuffer > accepts new items after draining [0.01ms]
 ✓ RingBuffer > wraps around correctly (head/tail modulo) [0.01ms]
-✓ RingBuffer > handles repeated fill-drain cycles [0.02ms]
-✓ RingBuffer > clears references after dequeue (no memory leaks) [0.04ms]
+✓ RingBuffer > handles repeated fill-drain cycles [0.04ms]
+✓ RingBuffer > clears references after dequeue (no memory leaks) [0.02ms]
 
 tests/phase1/normalise.test.ts:
-✓ normaliseLog > generates an id [0.31ms]
-✓ normaliseLog > defaults level to info when not provided [0.02ms]
+✓ normaliseLog > generates an id [0.28ms]
+✓ normaliseLog > defaults level to info when not provided [0.03ms]
 ✓ normaliseLog > defaults level to info for unknown level
 ✓ normaliseLog > accepts all valid levels
 ✓ normaliseLog > defaults service to unknown
 ✓ normaliseLog > uses provided service
 ✓ normaliseLog > uses provided timestamp (ms)
 ✓ normaliseLog > converts seconds-epoch timestamp to ms
-✓ normaliseLog > defaults timestamp to now when not provided [0.22ms]
+✓ normaliseLog > defaults timestamp to now when not provided [0.26ms]
 ✓ normaliseLog > clamps message to 4096 chars [0.04ms]
-✓ normaliseLog > clamps service to 128 chars [0.02ms]
-✓ normaliseLog > defaults attributes to {}
-✓ normaliseLog > passes valid attributes through [0.32ms]
-✓ normaliseLog > drops function values from attributes [0.02ms]
-✓ normaliseLog > caps attributes at 64 keys [0.09ms]
-✓ normaliseMetric > uses provided name and value [0.06ms]
-✓ normaliseMetric > defaults non-finite value to 0 [0.01ms]
+✓ normaliseLog > clamps service to 128 chars [0.04ms]
+✓ normaliseLog > defaults attributes to {} [0.01ms]
+✓ normaliseLog > passes valid attributes through [0.38ms]
+✓ normaliseLog > drops function values from attributes [0.04ms]
+✓ normaliseLog > caps attributes at 64 keys [0.15ms]
+✓ normaliseMetric > uses provided name and value [0.02ms]
+✓ normaliseMetric > defaults non-finite value to 0 [0.02ms]
 ✓ normaliseMetric > allows negative values
 ✓ normaliseMetric > defaults labels to {}
-✓ normaliseMetric > passes string labels through [0.03ms]
-✓ normaliseMetric > clamps name to 256 chars [0.01ms]
+✓ normaliseMetric > passes string labels through [0.02ms]
+✓ normaliseMetric > clamps name to 256 chars [0.04ms]
 ✓ normaliseTrace > preserves valid trace_id and span_id [0.03ms]
-✓ normaliseTrace > sets parent_id to null when not provided [0.07ms]
-✓ normaliseTrace > passes parent_id through when provided
+✓ normaliseTrace > sets parent_id to null when not provided [0.04ms]
+✓ normaliseTrace > passes parent_id through when provided [0.03ms]
 ✓ normaliseTrace > clamps duration to 0 minimum
-✓ normaliseTrace > floors duration to integer [0.06ms]
+✓ normaliseTrace > floors duration to integer [0.01ms]
 ✓ normaliseTrace > generates fallback id if span_id contains invalid chars [0.01ms]
 
 tests/phase1/sqlite-store.test.ts:
-✓ SqliteStore – logs > inserts and queries a single log [0.69ms]
-✓ SqliteStore – logs > inserts a batch and returns all rows [0.66ms]
-✓ SqliteStore – logs > returns rows newest-first [0.65ms]
-✓ SqliteStore – logs > filters by service [0.85ms]
-✓ SqliteStore – logs > filters by level [0.69ms]
-✓ SqliteStore – logs > filters by time range [0.43ms]
-✓ SqliteStore – logs > respects limit [0.67ms]
-✓ SqliteStore – logs > skips duplicate ids (idempotent insert) [0.57ms]
-✓ SqliteStore – logs > round-trips attributes as JSON [0.35ms]
-✓ SqliteStore – metrics > inserts and queries a single metric [0.40ms]
-✓ SqliteStore – metrics > inserts a batch [0.66ms]
-✓ SqliteStore – metrics > returns rows oldest-first (asc timestamp) [0.49ms]
-✓ SqliteStore – metrics > returns distinct metric names [0.81ms]
-✓ SqliteStore – metrics > round-trips labels as JSON [0.57ms]
-✓ SqliteStore – traces > inserts and queries a single span [0.59ms]
-✓ SqliteStore – traces > filters by trace_id [0.49ms]
-✓ SqliteStore – traces > skips duplicate span_ids (idempotent insert) [0.55ms]
-✓ SqliteStore – traces > preserves parent_id null [0.40ms]
-✓ SqliteStore – traces > preserves parent_id value [0.46ms]
-✓ SqliteStore – executeSql > runs a SELECT query and returns columns + rows [0.57ms]
-✓ SqliteStore – executeSql > returns empty result for no rows [0.31ms]
-✓ SqliteStore – executeSql > rejects INSERT statements [0.42ms]
-✓ SqliteStore – executeSql > rejects UPDATE statements [0.04ms]
-✓ SqliteStore – executeSql > rejects DROP statements [0.29ms]
-✓ SqliteStore – executeSql > allows WITH (CTE) queries [0.52ms]
-✓ SqliteStore – collectStats > returns zeroes on empty store [1.02ms]
-✓ SqliteStore – collectStats > counts inserted data correctly [0.68ms]
-✓ SqliteStore – collectStats > only counts last_1h logs correctly [0.71ms]
+✓ SqliteStore – logs > inserts and queries a single log [0.88ms]
+✓ SqliteStore – logs > inserts a batch and returns all rows [1.26ms]
+✓ SqliteStore – logs > returns rows newest-first [0.48ms]
+✓ SqliteStore – logs > filters by service [0.64ms]
+✓ SqliteStore – logs > filters by level [1.47ms]
+✓ SqliteStore – logs > filters by time range [1.03ms]
+✓ SqliteStore – logs > respects limit [0.80ms]
+✓ SqliteStore – logs > skips duplicate ids (idempotent insert) [0.39ms]
+✓ SqliteStore – logs > round-trips attributes as JSON [0.58ms]
+✓ SqliteStore – metrics > inserts and queries a single metric [0.50ms]
+✓ SqliteStore – metrics > inserts a batch [0.76ms]
+✓ SqliteStore – metrics > returns rows oldest-first (asc timestamp) [0.58ms]
+✓ SqliteStore – metrics > returns distinct metric names [0.40ms]
+✓ SqliteStore – metrics > round-trips labels as JSON [0.49ms]
+✓ SqliteStore – traces > inserts and queries a single span [0.45ms]
+✓ SqliteStore – traces > filters by trace_id [0.09ms]
+✓ SqliteStore – traces > skips duplicate span_ids (idempotent insert) [1.03ms]
+✓ SqliteStore – traces > preserves parent_id null [0.45ms]
+✓ SqliteStore – traces > preserves parent_id value [0.15ms]
+✓ SqliteStore – executeSql > runs a SELECT query and returns columns + rows [0.93ms]
+✓ SqliteStore – executeSql > returns empty result for no rows [0.35ms]
+✓ SqliteStore – executeSql > rejects INSERT statements [0.50ms]
+✓ SqliteStore – executeSql > rejects UPDATE statements [0.17ms]
+✓ SqliteStore – executeSql > rejects DROP statements [0.43ms]
+✓ SqliteStore – executeSql > allows WITH (CTE) queries [0.12ms]
+✓ SqliteStore – collectStats > returns zeroes on empty store [0.66ms]
+✓ SqliteStore – collectStats > counts inserted data correctly [0.71ms]
+✓ SqliteStore – collectStats > only counts last_1h logs correctly [0.22ms]
 
 tests/phase1/api.test.ts:
 [tiradata] storage: SQLite (:memory:)
 [Queue] Using In-Memory Ring Buffer
 <-- GET /api/health
 --> GET /api/health 200 0ms
-✓ GET /api/health > returns 200 with status ok [0.50ms]
+✓ GET /api/health > returns 200 with status ok [0.75ms]
 <-- GET /api/stats
 --> GET /api/stats 200 1ms
-✓ GET /api/stats > returns 200 with expected shape [0.38ms]
+✓ GET /api/stats > returns 200 with expected shape [0.41ms]
 <-- POST /api/ingest/log
 --> POST /api/ingest/log 202 0ms
 ✓ POST /api/ingest/log > returns 202 for valid payload [0.11ms]
@@ -368,37 +393,37 @@ tests/phase1/api.test.ts:
 ✓ POST /api/ingest/log > returns 202 with minimal payload (only message) [0.05ms]
 <-- POST /api/ingest/log
 --> POST /api/ingest/log 400 0ms
-✓ POST /api/ingest/log > returns 400 for invalid JSON [0.50ms]
+✓ POST /api/ingest/log > returns 400 for invalid JSON [0.27ms]
 <-- POST /api/ingest/metric
 --> POST /api/ingest/metric 202 0ms
-✓ POST /api/ingest/metric > returns 202 for valid payload [0.10ms]
+✓ POST /api/ingest/metric > returns 202 for valid payload [0.09ms]
 <-- POST /api/ingest/metric
 --> POST /api/ingest/metric 202 0ms
 ✓ POST /api/ingest/metric > returns 202 with minimal payload [0.05ms]
 <-- POST /api/ingest/trace
 --> POST /api/ingest/trace 202 0ms
-✓ POST /api/ingest/trace > returns 202 for valid payload [0.11ms]
+✓ POST /api/ingest/trace > returns 202 for valid payload [0.05ms]
 <-- POST /api/ingest/trace
 --> POST /api/ingest/trace 202 0ms
-✓ POST /api/ingest/trace > returns 202 with parent span [0.15ms]
+✓ POST /api/ingest/trace > returns 202 with parent span [0.04ms]
 <-- GET /api/logs
 --> GET /api/logs 200 0ms
 ✓ GET /api/logs > returns 200 with data and count [0.07ms]
 <-- GET /api/logs?service=test-api&level=info&limit=5
---> GET /api/logs?service=test-api&level=info&limit=5 200 0ms
-✓ GET /api/logs > accepts filter query params without error [0.17ms]
+--> GET /api/logs?service=test-api&level=info&limit=5 200 1ms
+✓ GET /api/logs > accepts filter query params without error [0.09ms]
 <-- GET /api/metrics
 --> GET /api/metrics 200 0ms
-✓ GET /api/metrics > returns 200 with data and count [0.21ms]
+✓ GET /api/metrics > returns 200 with data and count [0.67ms]
 <-- GET /api/metrics?name=http.request.duration&limit=10
 --> GET /api/metrics?name=http.request.duration&limit=10 200 0ms
-✓ GET /api/metrics > accepts name filter [0.14ms]
+✓ GET /api/metrics > accepts name filter [0.17ms]
 <-- GET /api/metrics/names
---> GET /api/metrics/names 200 1ms
-✓ GET /api/metrics/names > returns 200 with data array [0.13ms]
+--> GET /api/metrics/names 200 0ms
+✓ GET /api/metrics/names > returns 200 with data array [0.12ms]
 <-- GET /api/traces
 --> GET /api/traces 200 0ms
-✓ GET /api/traces > returns 200 with data and count [0.13ms]
+✓ GET /api/traces > returns 200 with data and count [0.14ms]
 <-- GET /api/traces?trace_id=trace-api-test
 --> GET /api/traces?trace_id=trace-api-test 200 0ms
 ✓ GET /api/traces > accepts trace_id filter [0.12ms]
@@ -407,21 +432,21 @@ tests/phase1/api.test.ts:
 ✓ POST /api/query/sql > executes a valid SELECT and returns result shape [0.07ms]
 <-- POST /api/query/sql
 --> POST /api/query/sql 400 0ms
-✓ POST /api/query/sql > blocks INSERT statements — returns 400 [0.09ms]
+✓ POST /api/query/sql > blocks INSERT statements — returns 400 [0.07ms]
 <-- POST /api/query/sql
 --> POST /api/query/sql 400 0ms
-✓ POST /api/query/sql > blocks DROP statements — returns 400 [0.20ms]
+✓ POST /api/query/sql > blocks DROP statements — returns 400 [0.04ms]
 <-- POST /api/query/sql
 --> POST /api/query/sql 400 0ms
-✓ POST /api/query/sql > returns 400 when sql field is missing [0.69ms]
+✓ POST /api/query/sql > returns 400 when sql field is missing [0.03ms]
 <-- POST /api/query/sql
---> POST /api/query/sql 400 1ms
-✓ POST /api/query/sql > returns 400 for malformed JSON [0.62ms]
+--> POST /api/query/sql 400 0ms
+✓ POST /api/query/sql > returns 400 for malformed JSON [0.04ms]
 <-- POST /api/query/sql
---> POST /api/query/sql 200 1ms
-✓ POST /api/query/sql > allows WITH (CTE) queries [3.46ms]
+--> POST /api/query/sql 200 0ms
+✓ POST /api/query/sql > allows WITH (CTE) queries [0.07ms]
 
- 154 pass
+ 159 pass
  0 fail
- 371 expect() calls
-Ran 154 tests across 14 files. [9.11s]
+ 382 expect() calls
+Ran 159 tests across 15 files. [10.83s]

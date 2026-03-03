@@ -262,10 +262,12 @@ export class SqliteStore implements IStore {
 
     const conditions = [
       params.trace_id ? eq(traces.traceId, params.trace_id) : undefined,
+      params.service ? sql`json_extract(${traces.attributes}, '$."service.name"') = ${params.service}` : undefined,
+      params.name ? eq(traces.name, params.name) : undefined,
       params.from ? gte(traces.startTime, params.from) : undefined,
       params.to ? lte(traces.startTime, params.to) : undefined,
       eq(traces.projectId, params.projectId),
-    ].filter(Boolean) as ReturnType<typeof eq>[]
+    ].filter(Boolean) as any[]
 
     const whereClause = conditions.length ? and(...conditions) : undefined
 
