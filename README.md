@@ -41,36 +41,38 @@ TiraData is a **vendor-independent** observability platform built for developers
 - 🔍 **SQL First**: No proprietary query language. Use raw SQL for everything.
 
 ```
-SDK / curl
-    ↓
-Ingestion API (HTTP / Hono)
-    ↓
-Normaliser + Validator
-    ↓
+    OTLP / SDK / curl
+    ↓         ↓
+  gRPC      HTTP (Hono)
+    ↓         ↓
+    Mapper (OTLP)
+          ↓
+  Normaliser + Validator
+          ↓
 In-Memory Ring Buffer Queue  ←── backpressure
     ↓  (batch flush every 250ms)
-SQLite (WAL mode, prepared statements)
+SQLite (WAL mode) / PostgreSQL
     ↓
-Query Engine (raw SQL, sandboxed SELECT)
+Query Engine (raw SQL)
     ↓
-React Frontend (Dashboard · Logs · Metrics · Traces · SQL Editor)
+React Frontend (Dashboard · APM · Logs · SQL)
 ```
 
 ---
 
 ## Tech Stack
 
-| Layer              | Technology                   |
-| ------------------ | ---------------------------- |
-| Runtime            | [Bun](https://bun.sh)        |
-| HTTP Framework     | [Hono](https://hono.dev)     |
-| Database           | SQLite (via `bun:sqlite`)    |
-| Frontend Framework | React 19 + TypeScript        |
-| Build Tool         | Vite 8                       |
-| Routing            | TanStack Router (file-based) |
-| Data Fetching      | TanStack Query               |
-| Charts             | Recharts                     |
-| SQL Editor         | Monaco Editor                |
+| Layer              | Technology                              |
+| ------------------ | --------------------------------------- |
+| Runtime            | [Bun](https://bun.sh)                   |
+| HTTP Framework     | [Hono](https://hono.dev)                |
+| gRPC Framework     | [@grpc/grpc-js](https://grpc.io)        |
+| Database           | SQLite (native) / PostgreSQL            |
+| ORM                | [Drizzle ORM](https://orm.drizzle.team) |
+| Frontend Framework | React 19 + TypeScript                   |
+| Routing            | TanStack Router                         |
+| Styling            | Tailwind CSS 4                          |
+| SQL Editor         | Monaco Editor                           |
 
 ---
 
@@ -102,20 +104,23 @@ bun install
 ### Run (Development)
 
 ```bash
-# Start both frontend (Vite :5173) and backend (Bun :3000) concurrently
+# Starts frontend (Vite :5173) and backend (Bun :3000 + gRPC :4317)
+# Automatically clears ports before starting via 'predev' hook
 npm run dev
 
-# Push schema to database (uses STORE env var)
+# Push schema to database
 npm run db:push
 
-# Open Drizzle Studio (visual DB browser)
-npm run db:studio
+# Force kill any processes on ports 3000, 4317, 5173
+npm run kill
 ```
 
-| Service     | URL                   |
-| ----------- | --------------------- |
-| Frontend    | http://localhost:5173 |
-| Backend API | http://localhost:3000 |
+| Service              | Port   | Protocol | Description             |
+| -------------------- | ------ | -------- | ----------------------- |
+| **Frontend UI**      | `5173` | HTTP     | Web Dashboard           |
+| **Backend API**      | `3000` | HTTP     | Query, Admin, OTLP/HTTP |
+| **OTLP gRPC**        | `4317` | gRPC     | Native Ingestion        |
+| **OTLP gRPC (Test)** | `4318` | gRPC     | Test Suite Listener     |
 
 ### Run Separately
 
@@ -141,20 +146,20 @@ src/
 │   │   ├── ring-buffer.ts                  # O(1) ring buffer (backpressure queue)
 │   │   └── store.interface.ts              # IStore — shared adapter contract
 │   ├── infrastructure/
-│   │   ├── db/
-│   │   │   ├── schema.sqlite.ts            # Drizzle SQLite table + index definitions
-│   │   │   └── schema.pg.ts               # Drizzle PostgreSQL table + index definitions
+│   │   ├── db/                             # Drizzle core
 │   │   ├── http/
-│   │   │   └── server.ts                   # Hono routes (ingest, query, admin)
-│   │   ├── queue/
-│   │   │   └── ingestion-queue.ts          # Async queue → batch DB writes
-│   │   ├── sqlite/
-│   │   │   └── store.ts                    # SQLiteStore implements IStore (Drizzle)
-│   │   ├── postgres/
-│   │   │   └── store.ts                    # PostgresStore implements IStore (Drizzle + pg)
-│   │   └── store-factory.ts                # Picks adapter from STORE env var
+│   │   │   └── server.ts                   # Hono endpoints
+│   │   ├── grpc/
+│   │   │   ├── server.ts                   # Native OTLP gRPC listener
+│   │   │   └── protos/                     # OTel .proto definitions
+│   │   ├── queue/                          # Ring buffer & WAL
+│   │   ├── cache/                          # Query result caching
+│   │   └── sqlite/postgres/                # Store implementations
 │   └── usecases/
-│       └── normalise.ts                    # Payload validation & sanitisation
+│       ├── normalise.ts                    # Payload sanitization
+│       ├── otlp-mapper.ts                  # OTLP → Internal mapping
+│       ├── alerting-engine.ts              # Background rule checker
+│       └── ttl-job.ts                      # Rentention manager
 └── frontend/
     ├── components/
     │   └── Sidebar.tsx                     # Nav sidebar with backend health indicator
@@ -172,25 +177,45 @@ src/
 
 ---
 
-## HTTP API
+---
 
-### Ingestion
+## Native OpenTelemetry Support
+
+TiraData acts as a native OTLP receiver. You can point the **OpenTelemetry Collector** or any **OTel SDK** directly to it.
+
+### OTel Collector Configuration
+
+```yaml
+exporters:
+  otlp/tiradata:
+    endpoint: "localhost:4317" # gRPC
+    tls:
+      insecure: true
+    headers:
+      X-API-Key: "your_api_key_here"
+
+service:
+  pipelines:
+    traces:
+      exporters: [otlp/tiradata]
+    metrics:
+      exporters: [otlp/tiradata]
+    logs:
+      exporters: [otlp/tiradata]
+```
+
+### Manual Ingestion (curl)
 
 ```bash
-# Ingest a log
+# OTLP/HTTP (Logs)
+curl -X POST http://localhost:3000/v1/logs \
+  -H 'X-API-Key: project_key' \
+  -d '{"resourceLogs": [...]}'
+
+# TiraData Custom API (Simpler)
 curl -X POST http://localhost:3000/api/ingest/log \
-  -H 'Content-Type: application/json' \
-  -d '{"level":"info","service":"api","message":"user logged in","attributes":{"user_id":"u_1"}}'
-
-# Ingest a metric
-curl -X POST http://localhost:3000/api/ingest/metric \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"http.request.duration","value":142.5,"labels":{"env":"prod"}}'
-
-# Ingest a trace span
-curl -X POST http://localhost:3000/api/ingest/trace \
-  -H 'Content-Type: application/json' \
-  -d '{"trace_id":"t1","span_id":"s1","name":"POST /orders","duration":320}'
+  -H 'X-API-Key: project_key' \
+  -d '{"level":"info","message":"hello"}'
 ```
 
 ### Query
