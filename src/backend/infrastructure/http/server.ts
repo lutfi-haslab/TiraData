@@ -2,9 +2,11 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { IngestionQueue } from '../queue/ingestion-queue'
+import { WALQueue } from '../queue/wal-queue'
 import { createStore } from '../store-factory'
 import { normaliseLog, normaliseMetric, normaliseTrace } from '../../usecases/normalise'
 import type { IStore } from '../../domain/store.interface'
+import type { IIngestionQueue } from '../../domain/queue.interface'
 import type {
   IngestLogPayload,
   IngestMetricPayload,
@@ -14,17 +16,26 @@ import type {
 // ─── Async Server Factory ─────────────────────────────────────────────────────
 // Must be async because createStore() awaits PostgresStore.init()
 
-let _queue: IngestionQueue | null = null
+let _queue: IIngestionQueue | null = null
 let _store: IStore | null = null
 
 export const createServer = async () => {
   _store = await createStore()
 
-  _queue = new IngestionQueue(10_000, async (logs, metrics, traces) => {
+  const queueMode = Bun.env.QUEUE_MODE ?? 'memory'
+  const flushFn = async (logs: any[], metrics: any[], traces: any[]) => {
     if (logs.length)    await _store!.insertLogs(logs)
     if (metrics.length) await _store!.insertMetrics(metrics)
     if (traces.length)  await _store!.insertTraces(traces)
-  })
+  }
+
+  if (queueMode === 'wal') {
+    console.log('[Queue] Using Persistent WAL Queue')
+    _queue = new WALQueue(100_000, flushFn)
+  } else {
+    console.log('[Queue] Using In-Memory Ring Buffer')
+    _queue = new IngestionQueue(10_000, flushFn)
+  }
 
   const app = new Hono()
 
@@ -139,6 +150,7 @@ export const createServer = async () => {
     c.json({
       adapter:      Bun.env.STORE ?? 'sqlite',
       db_path:      Bun.env.DB_PATH ?? 'tiradata.db',
+      queue_mode:    Bun.env.QUEUE_MODE ?? 'memory',
       queue_size:   _queue!.size,
       queue_cap:    _queue!.capacity,
       queue_dropped: _queue!.dropped,

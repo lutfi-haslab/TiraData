@@ -24,6 +24,8 @@ export const logs = pgTable(
     index('idx_logs_ts').on(t.timestamp),
     index('idx_logs_svc_ts').on(t.service, t.timestamp),
     index('idx_logs_lvl_ts').on(t.level, t.timestamp),
+    // GIN indexes for jsonb columns (optimization for @> queries, though we use them via SQL Editor mostly)
+    index('idx_logs_attrs').using('gin', t.attributes),
   ]
 )
 
@@ -37,6 +39,7 @@ export const metrics = pgTable(
   },
   (t) => [
     index('idx_metrics_name_ts').on(t.name, t.timestamp),
+    index('idx_metrics_labels').using('gin', t.labels),
   ]
 )
 
@@ -54,6 +57,7 @@ export const traces = pgTable(
   (t) => [
     index('idx_traces_ts').on(t.startTime),
     index('idx_traces_trace_id').on(t.traceId),
+    index('idx_traces_attrs').using('gin', t.attributes),
   ]
 )
 

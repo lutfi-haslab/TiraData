@@ -23,6 +23,8 @@ export const logs = sqliteTable(
     index('idx_logs_ts').on(t.timestamp),
     index('idx_logs_svc_ts').on(t.service, t.timestamp),
     index('idx_logs_lvl_ts').on(t.level, t.timestamp),
+    // Composite index for common filtering
+    index('idx_logs_svc_lvl_ts').on(t.service, t.level, t.timestamp),
   ]
 )
 

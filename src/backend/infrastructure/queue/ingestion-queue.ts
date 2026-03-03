@@ -11,6 +11,8 @@ type FlushFn = (logs: LogEntry[], metrics: MetricEntry[], traces: TraceEntry[]) 
 const BATCH_SIZE   = 500
 const FLUSH_INTERVAL_MS = 250
 
+import type { IIngestionQueue } from '../../domain/queue.interface'
+
 /**
  * IngestionQueue – decouples the HTTP handler from the storage layer.
  *
@@ -22,7 +24,7 @@ const FLUSH_INTERVAL_MS = 250
  *  - DB writes happen in larger, cheaper batches
  *  - Backpressure is communicated back to callers via the return value
  */
-export class IngestionQueue {
+export class IngestionQueue implements IIngestionQueue {
   private readonly buf: RingBuffer<QueueItem>
   private timer: ReturnType<typeof setInterval> | null = null
 
