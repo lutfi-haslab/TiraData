@@ -7,7 +7,7 @@ import { WALQueue } from '../queue/wal-queue'
 import { createStore } from '../store-factory'
 import { normaliseLog, normaliseMetric, normaliseTrace } from '../../usecases/normalise'
 import { mapOTLPLogs, mapOTLPMetrics, mapOTLPTraces } from '../../usecases/otlp-mapper'
-import { authMiddleware } from './middleware'
+import { createAuthMiddleware } from './middleware'
 import { queryCache } from '../cache/query-cache'
 import type { IStore } from '../../domain/store.interface'
 import type { IIngestionQueue } from '../../domain/queue.interface'
@@ -44,13 +44,24 @@ export const createServer = async () => {
     _queue = new IngestionQueue(10_000, flushFn)
   }
 
-  const app = new Hono()
+  const app = new Hono<{ Variables: { projectId: string, role: string } }>()
 
   // ── Global middleware ──────────────────────────────────────────────────────
   app.use('*', logger())
   app.use('*', cors({ origin: '*' }))
-  app.use('/api/*', authMiddleware)
-  app.use('/v1/*', authMiddleware) // OTLP routes
+  
+  const auth = createAuthMiddleware(_store!)
+  app.use('/api/*', auth)
+  app.use('/v1/*', auth) // OTLP routes
+
+  // Helper to get effective projectId
+  const getPID = (c: any) => {
+    const contextId = c.get('projectId') || 'default'
+    if (contextId === 'master') {
+      return c.req.header('X-Project-Id') || c.req.query('projectId') || 'default'
+    }
+    return contextId
+  }
 
   // ── Live Tail (WebSocket) ──────────────────────────────────────────────────
   app.get('/ws/tail', upgradeWebSocket((c) => {
@@ -88,9 +99,10 @@ export const createServer = async () => {
   )
 
   // ── Stats ──────────────────────────────────────────────────────────────────
-  app.get('/api/stats', async (c) =>
-    c.json(await _store!.collectStats(_queue!.size, _queue!.capacity))
-  )
+  app.get('/api/stats', async (c) => {
+    const pid = getPID(c)
+    return c.json(await _store!.collectStats(_queue!.size, _queue!.capacity, pid))
+  })
 
   // ── Ingestion ──────────────────────────────────────────────────────────────
   app.post('/api/ingest/log', async (c) => {
@@ -98,7 +110,8 @@ export const createServer = async () => {
     try { payload = await c.req.json() }
     catch { return c.json({ error: 'Invalid JSON' }, 400) }
 
-    const entry    = normaliseLog(payload)
+    const pid = getPID(c)
+    const entry    = { ...normaliseLog(payload), projectId: pid }
     const accepted = _queue!.enqueueLog(entry)
     return c.json({ success: true, id: entry.id, accepted }, accepted ? 202 : 429)
   })
@@ -108,7 +121,8 @@ export const createServer = async () => {
     try { payload = await c.req.json() }
     catch { return c.json({ error: 'Invalid JSON' }, 400) }
 
-    const entry    = normaliseMetric(payload)
+    const pid = getPID(c)
+    const entry    = { ...normaliseMetric(payload), projectId: pid }
     const accepted = _queue!.enqueueMetric(entry)
     return c.json({ success: true, accepted }, accepted ? 202 : 429)
   })
@@ -118,7 +132,8 @@ export const createServer = async () => {
     try { payload = await c.req.json() }
     catch { return c.json({ error: 'Invalid JSON' }, 400) }
 
-    const entry    = normaliseTrace(payload)
+    const pid = getPID(c)
+    const entry    = { ...normaliseTrace(payload), projectId: pid }
     const accepted = _queue!.enqueueTrace(entry)
     return c.json({ success: true, span_id: entry.span_id, accepted }, accepted ? 202 : 429)
   })
@@ -129,9 +144,10 @@ export const createServer = async () => {
     const entries = mapOTLPLogs(body)
     if (entries.length === 0) return c.json({ partialSuccess: false }, 200)
 
+    const pid = getPID(c)
     let accepted = 0
     for (const e of entries) {
-      if (_queue!.enqueueLog(e)) accepted++
+      if (_queue!.enqueueLog({ ...e, projectId: pid })) accepted++
     }
     return c.json({ partialSuccess: accepted < entries.length }, 
       accepted > 0 ? 200 : 429)
@@ -142,9 +158,10 @@ export const createServer = async () => {
     const entries = mapOTLPMetrics(body)
     if (entries.length === 0) return c.json({ partialSuccess: false }, 200)
 
+    const pid = getPID(c)
     let accepted = 0
     for (const e of entries) {
-      if (_queue!.enqueueMetric(e)) accepted++
+      if (_queue!.enqueueMetric({ ...e, projectId: pid })) accepted++
     }
     return c.json({ partialSuccess: accepted < entries.length }, 
       accepted > 0 ? 200 : 429)
@@ -155,9 +172,10 @@ export const createServer = async () => {
     const entries = mapOTLPTraces(body)
     if (entries.length === 0) return c.json({ partialSuccess: false }, 200)
 
+    const pid = getPID(c)
     let accepted = 0
     for (const e of entries) {
-      if (_queue!.enqueueTrace(e)) accepted++
+      if (_queue!.enqueueTrace({ ...e, projectId: pid })) accepted++
     }
     return c.json({ partialSuccess: accepted < entries.length }, 
       accepted > 0 ? 200 : 429)
@@ -170,7 +188,9 @@ export const createServer = async () => {
     const cached = queryCache.get(cacheKey)
     if (cached) return c.json(cached)
 
+    const pid = getPID(c)
     const result = await _store!.queryLogs({
+      projectId: pid,
       service: q.service,
       level: q.level,
       from: q.from ? Number(q.from) : undefined,
@@ -189,7 +209,9 @@ export const createServer = async () => {
     const cached = queryCache.get(cacheKey)
     if (cached) return c.json(cached)
 
+    const pid = getPID(c)
     const result = await _store!.queryMetrics({
+      projectId: pid,
       name: q.name,
       from: q.from ? Number(q.from) : undefined,
       to: q.to ? Number(q.to) : undefined,
@@ -202,11 +224,9 @@ export const createServer = async () => {
   })
 
   app.get('/api/metrics/names', async (c) => {
-    const cacheKey = 'metrics:names'
-    const cached = queryCache.get(cacheKey)
-    if (cached) return c.json(cached)
-
-    const result = { data: await _store!.metricNames() }
+    const pid = getPID(c)
+    const cacheKey = `metrics:names:${pid}`
+    const result = { data: await _store!.metricNames(pid) }
     queryCache.set(cacheKey, result, 60000) // Cache names for 1 min
     return c.json(result)
   })
@@ -217,7 +237,9 @@ export const createServer = async () => {
     const cached = queryCache.get(cacheKey)
     if (cached) return c.json(cached)
 
+    const pid = getPID(c)
     const result = await _store!.queryTraces({
+      projectId: pid,
       trace_id: q.trace_id,
       from: q.from ? Number(q.from) : undefined,
       to: q.to ? Number(q.to) : undefined,
@@ -243,7 +265,8 @@ export const createServer = async () => {
     if (cached) return c.json(cached)
 
     try {
-      const result = await _store!.executeSql(body.sql)
+      const pid = getPID(c)
+      const result = await _store!.executeSql(body.sql, pid)
       queryCache.set(cacheKey, result)
       return c.json(result)
     } catch (err) {
@@ -269,6 +292,7 @@ export const createServer = async () => {
   )
 
   app.post('/api/admin/ttl/run', async (c) => {
+    const pid = getPID(c)
     const body = await c.req.json().catch(() => ({})) as Record<string, number>
     const now  = Date.now()
 
@@ -278,6 +302,7 @@ export const createServer = async () => {
     const tracesDays  = Number(body.tracesDays  ?? Bun.env.TTL_TRACES_DAYS  ?? 7)
 
     const result = await _store!.deleteBefore({
+      projectId:     pid,
       logsBefore:    now - logsDays    * 86_400_000,
       metricsBefore: now - metricsDays * 86_400_000,
       tracesBefore:  now - tracesDays  * 86_400_000,
@@ -286,14 +311,51 @@ export const createServer = async () => {
     return c.json({ success: true, deleted: result, retention: { logsDays, metricsDays, tracesDays } })
   })
 
-  // ── Alerts ─────────────────────────────────────────────────────────────────
-  app.get('/api/alerts/rules', async (c) => {
-    const rules = await _store!.getAlertRules()
-    return c.json(rules)
+  // ── Projects & API Keys ───────────────────────────────────────────────────
+  app.get('/api/admin/projects', async (c) => {
+    if (c.get('projectId') !== 'master') return c.json({ error: 'System admin only' }, 403)
+    return c.json(await _store!.getProjects())
   })
 
+  app.post('/api/admin/projects', async (c) => {
+    if (c.get('projectId') !== 'master') return c.json({ error: 'System admin only' }, 403)
+    const body = await c.req.json()
+    const proj = { id: body.id || crypto.randomUUID(), name: body.name, createdAt: Date.now() }
+    await _store!.saveProject(proj)
+    return c.json({ success: true, project: proj })
+  })
+
+  app.get('/api/admin/keys', async (c) => {
+    const pid = getPID(c)
+    return c.json(await _store!.getApiKeys(pid))
+  })
+
+  app.post('/api/admin/keys', async (c) => {
+    const pid = getPID(c)
+    // Only project admins or master can create keys
+    if (c.get('role') !== 'admin') return c.json({ error: 'Admin required' }, 403)
+    
+    const body = await c.req.json()
+    const key = {
+      key: crypto.randomUUID().replace(/-/g, ''),
+      projectId: pid,
+      name: body.name || 'New Key',
+      role: (body.role === 'admin' ? 'admin' : 'ingest') as 'admin' | 'ingest',
+      createdAt: Date.now()
+    }
+    await _store!.saveApiKey(key)
+    return c.json({ success: true, key })
+  })
+
+  // ── Alerts ─────────────────────────────────────────────────────────────────
+  app.get('/api/alerts/rules', async (c) => {
+    const pid = getPID(c)
+    const rules = await _store!.getAlertRules(pid)
+    return c.json(rules)
+  })
   app.post('/api/alerts/rules', async (c) => {
     const body = await c.req.json()
+    const pid = getPID(c)
     const rule: AlertRule = {
       id: body.id || crypto.randomUUID(),
       name: body.name,
@@ -302,30 +364,34 @@ export const createServer = async () => {
       condition: body.condition || 'gt',
       intervalMs: Number(body.intervalMs) || 60000,
       enabled: body.enabled !== false,
-      lastChecked: body.lastChecked
+      lastChecked: body.lastChecked,
+      projectId: pid
     }
     await _store!.saveAlertRule(rule)
     return c.json({ success: true, rule })
   })
 
   app.delete('/api/alerts/rules/:id', async (c) => {
+    const pid = getPID(c)
     const id = c.req.param('id')
-    await _store!.deleteAlertRule(id)
+    await _store!.deleteAlertRule(id, pid)
     return c.json({ success: true })
   })
 
   app.get('/api/alerts/history', async (c) => {
+    const pid = getPID(c)
     const ruleId = c.req.query('rule_id')
     const limit  = Number(c.req.query('limit')) || 100
-    const history = await _store!.getAlertHistory(ruleId, limit)
+    const history = await _store!.getAlertHistory(pid, ruleId, limit)
     return c.json(history)
   })
 
   // ── Visualization ──────────────────────────────────────────────────────────
   app.get('/api/query/service-map', async (c) => {
+    const pid = getPID(c)
     const from = Number(c.req.query('from')) || undefined
     const to   = Number(c.req.query('to')) || undefined
-    const edges = await _store!.getServiceMap(from, to)
+    const edges = await _store!.getServiceMap(pid, from, to)
     return c.json(edges)
   })
 

@@ -14,20 +14,36 @@ const startMs = Date.now()
 // ─── DDL (idempotent setup) ───────────────────────────────────────────────────
 
 const DDL = /* sql */`
+  CREATE TABLE IF NOT EXISTS projects (
+    id         VARCHAR(128) PRIMARY KEY,
+    name       VARCHAR(256) NOT NULL,
+    created_at BIGINT       NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS api_keys (
+    key        VARCHAR(128) PRIMARY KEY,
+    project_id VARCHAR(128) NOT NULL REFERENCES projects(id),
+    name       VARCHAR(256) NOT NULL,
+    role       VARCHAR(32)  NOT NULL,
+    created_at BIGINT       NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS logs (
     id         VARCHAR(128) PRIMARY KEY,
     timestamp  BIGINT       NOT NULL,
     level      VARCHAR(16)  NOT NULL,
     service    VARCHAR(128) NOT NULL,
     message    TEXT         NOT NULL,
-    attributes JSONB        NOT NULL DEFAULT '{}'
+    attributes JSONB        NOT NULL DEFAULT '{}',
+    project_id VARCHAR(128) NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS metrics (
-    timestamp BIGINT            NOT NULL,
-    name      VARCHAR(256)      NOT NULL,
-    value     DOUBLE PRECISION  NOT NULL,
-    labels    JSONB             NOT NULL DEFAULT '{}'
+    timestamp  BIGINT            NOT NULL,
+    name       VARCHAR(256)      NOT NULL,
+    value      DOUBLE PRECISION  NOT NULL,
+    labels     JSONB             NOT NULL DEFAULT '{}',
+    project_id VARCHAR(128)      NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS traces (
@@ -37,36 +53,41 @@ const DDL = /* sql */`
     start_time BIGINT       NOT NULL,
     duration   BIGINT       NOT NULL,
     name       VARCHAR(256) NOT NULL,
-    attributes JSONB        NOT NULL DEFAULT '{}'
+    attributes JSONB        NOT NULL DEFAULT '{}',
+    project_id VARCHAR(128) NOT NULL
   );
 
-  -- Covering + GIN indexes for Postgres
   CREATE INDEX IF NOT EXISTS idx_logs_ts      ON logs    (timestamp DESC);
+  CREATE INDEX IF NOT EXISTS idx_logs_proj_ts ON logs    (project_id, timestamp DESC);
   CREATE INDEX IF NOT EXISTS idx_logs_svc_ts  ON logs    (service, timestamp DESC);
   CREATE INDEX IF NOT EXISTS idx_logs_lvl_ts  ON logs    (level, timestamp DESC);
   CREATE INDEX IF NOT EXISTS idx_logs_attrs   ON logs    USING GIN (attributes);
   CREATE INDEX IF NOT EXISTS idx_metrics_ts   ON metrics (name, timestamp DESC);
+  CREATE INDEX IF NOT EXISTS idx_metrics_proj ON metrics (project_id, timestamp DESC);
   CREATE INDEX IF NOT EXISTS idx_metrics_lbl  ON metrics USING GIN (labels);
   CREATE INDEX IF NOT EXISTS idx_traces_ts    ON traces  (start_time DESC);
+  CREATE INDEX IF NOT EXISTS idx_traces_proj  ON traces  (project_id, start_time DESC);
   CREATE INDEX IF NOT EXISTS idx_traces_id    ON traces  (trace_id);
 
   CREATE TABLE IF NOT EXISTS alert_rules (
-    id          VARCHAR(128) PRIMARY KEY,
-    name        VARCHAR(256) NOT NULL,
-    query       TEXT         NOT NULL,
-    threshold   DOUBLE PRECISION NOT NULL,
-    condition   VARCHAR(8)   NOT NULL,
-    interval_ms BIGINT       NOT NULL,
-    enabled     BOOLEAN      NOT NULL DEFAULT TRUE,
-    last_checked BIGINT
+    id           VARCHAR(128) PRIMARY KEY,
+    name         VARCHAR(256) NOT NULL,
+    query        TEXT         NOT NULL,
+    threshold    DOUBLE PRECISION NOT NULL,
+    condition    VARCHAR(8)   NOT NULL,
+    interval_ms  BIGINT       NOT NULL,
+    enabled      BOOLEAN      NOT NULL DEFAULT TRUE,
+    last_checked BIGINT,
+    project_id   VARCHAR(128) NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS alert_history (
-    id        VARCHAR(128) PRIMARY KEY,
-    rule_id   VARCHAR(128) NOT NULL,
-    timestamp BIGINT       NOT NULL,
-    value     DOUBLE PRECISION NOT NULL,
-    triggered BOOLEAN      NOT NULL
+    id         VARCHAR(128) PRIMARY KEY,
+    rule_id    VARCHAR(128) NOT NULL,
+    timestamp  BIGINT       NOT NULL,
+    value      DOUBLE PRECISION NOT NULL,
+    triggered  BOOLEAN      NOT NULL,
+    project_id VARCHAR(128) NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_alert_hist_rule ON alert_history (rule_id, timestamp DESC);
 `
@@ -107,6 +128,7 @@ export class PostgresStore implements IStore {
         service:    row.service,
         message:    row.message,
         attributes: row.attributes,
+        projectId:  row.projectId,
       }))
     ).onConflictDoNothing()
   }
@@ -119,6 +141,7 @@ export class PostgresStore implements IStore {
         name:      row.name,
         value:     row.value,
         labels:    row.labels,
+        projectId: row.projectId,
       }))
     )
   }
@@ -134,6 +157,7 @@ export class PostgresStore implements IStore {
         duration:   row.duration,
         name:       row.name,
         attributes: row.attributes,
+        projectId:  row.projectId,
       }))
     ).onConflictDoNothing()
   }
@@ -149,6 +173,7 @@ export class PostgresStore implements IStore {
       params.level ? eq(logs.level, params.level) : undefined,
       params.from ? gte(logs.timestamp, params.from) : undefined,
       params.to ? lte(logs.timestamp, params.to) : undefined,
+      eq(logs.projectId, params.projectId),
     ].filter(Boolean) as ReturnType<typeof eq>[]
 
     const whereClause = conditions.length ? and(...conditions) : undefined
@@ -172,6 +197,7 @@ export class PostgresStore implements IStore {
       service: r.service,
       message: r.message,
       attributes: r.attributes as Record<string, unknown>,
+      projectId: r.projectId,
     }))
 
     return { data, count: Number(total) }
@@ -185,6 +211,7 @@ export class PostgresStore implements IStore {
       params.name ? eq(metrics.name, params.name) : undefined,
       params.from ? gte(metrics.timestamp, params.from) : undefined,
       params.to ? lte(metrics.timestamp, params.to) : undefined,
+      eq(metrics.projectId, params.projectId),
     ].filter(Boolean) as ReturnType<typeof eq>[]
 
     const whereClause = conditions.length ? and(...conditions) : undefined
@@ -206,15 +233,17 @@ export class PostgresStore implements IStore {
       name: r.name,
       value: r.value,
       labels: r.labels as Record<string, string>,
+      projectId: r.projectId,
     }))
 
     return { data, count: Number(total) }
   }
 
-  async metricNames(): Promise<string[]> {
+  async metricNames(projectId: string): Promise<string[]> {
     const rows = await this.db
       .selectDistinct({ name: metrics.name })
       .from(metrics)
+      .where(eq(metrics.projectId, projectId))
       .orderBy(asc(metrics.name))
     return rows.map((r) => r.name)
   }
@@ -227,6 +256,7 @@ export class PostgresStore implements IStore {
       params.trace_id ? eq(traces.traceId, params.trace_id) : undefined,
       params.from ? gte(traces.startTime, params.from) : undefined,
       params.to ? lte(traces.startTime, params.to) : undefined,
+      eq(traces.projectId, params.projectId),
     ].filter(Boolean) as ReturnType<typeof eq>[]
 
     const whereClause = conditions.length ? and(...conditions) : undefined
@@ -251,13 +281,14 @@ export class PostgresStore implements IStore {
       duration: r.duration,
       name: r.name,
       attributes: r.attributes as Record<string, unknown>,
+      projectId: r.projectId,
     }))
 
     return { data, count: Number(total) }
   }
 
   /** Raw SQL passthrough — SELECT / CTE only. */
-  async executeSql(sqlStr: string): Promise<SqlQueryResult> {
+  async executeSql(sqlStr: string, projectId: string): Promise<SqlQueryResult> {
     const t0 = performance.now()
     const cleanSql = sqlStr.replace(/--.*$|\/\*[\s\S]*?\*\//gm, '').trim().toUpperCase()
     if (!cleanSql.startsWith('SELECT') && !cleanSql.startsWith('WITH')) {
@@ -272,15 +303,15 @@ export class PostgresStore implements IStore {
 
   // ─── Stats ───────────────────────────────────────────────────────────────────
 
-  async collectStats(queueSize: number, queueCapacity: number): Promise<SystemStats> {
+  async collectStats(queueSize: number, queueCapacity: number, projectId: string): Promise<SystemStats> {
     const oneHourAgo = Date.now() - 60 * 60 * 1000
 
     const [[logTotal], [logHour], [metTotal], [metSeries], [trcTotal]] = await Promise.all([
-      this.db.select({ n: count() }).from(logs),
-      this.db.select({ n: count() }).from(logs).where(gte(logs.timestamp, oneHourAgo)),
-      this.db.select({ n: count() }).from(metrics),
-      this.db.select({ n: countDistinct(metrics.name) }).from(metrics),
-      this.db.select({ n: count() }).from(traces),
+      this.db.select({ n: count() }).from(logs).where(eq(logs.projectId, projectId)),
+      this.db.select({ n: count() }).from(logs).where(and(eq(logs.projectId, projectId), gte(logs.timestamp, oneHourAgo))),
+      this.db.select({ n: count() }).from(metrics).where(eq(metrics.projectId, projectId)),
+      this.db.select({ n: countDistinct(metrics.name) }).from(metrics).where(eq(metrics.projectId, projectId)),
+      this.db.select({ n: count() }).from(traces).where(eq(traces.projectId, projectId)),
     ])
 
     return {
@@ -304,16 +335,17 @@ export class PostgresStore implements IStore {
     logsBefore?: number
     metricsBefore?: number
     tracesBefore?: number
+    projectId: string
   }): Promise<TtlDeleteResult> {
     const results = await Promise.all([
       params.logsBefore
-        ? this.db.delete(logs).where(lte(logs.timestamp, params.logsBefore)).returning({ id: logs.id })
+        ? this.db.delete(logs).where(and(eq(logs.timestamp, params.logsBefore), eq(logs.projectId, params.projectId))).returning({ id: logs.id })
         : Promise.resolve([]),
       params.metricsBefore
-        ? this.db.delete(metrics).where(lte(metrics.timestamp, params.metricsBefore)).returning({ name: metrics.name })
+        ? this.db.delete(metrics).where(and(eq(metrics.timestamp, params.metricsBefore), eq(metrics.projectId, params.projectId))).returning({ name: metrics.name })
         : Promise.resolve([]),
       params.tracesBefore
-        ? this.db.delete(traces).where(lte(traces.startTime, params.tracesBefore)).returning({ spanId: traces.spanId })
+        ? this.db.delete(traces).where(and(eq(traces.startTime, params.tracesBefore), eq(traces.projectId, params.projectId))).returning({ spanId: traces.spanId })
         : Promise.resolve([]),
     ])
     return { logs: results[0].length, metrics: results[1].length, traces: results[2].length }
@@ -321,8 +353,8 @@ export class PostgresStore implements IStore {
 
   // ── Alerts ───────────────────────────────────────────────────────────────
 
-  async getAlertRules(): Promise<AlertRule[]> {
-    const rows = await this.db.select().from(schema.alertRules)
+  async getAlertRules(projectId: string): Promise<AlertRule[]> {
+    const rows = await this.db.select().from(schema.alertRules).where(eq(schema.alertRules.projectId, projectId))
     return rows as AlertRule[]
   }
 
@@ -338,30 +370,31 @@ export class PostgresStore implements IStore {
           condition: rule.condition,
           intervalMs: rule.intervalMs,
           enabled: rule.enabled,
-          lastChecked: rule.lastChecked ?? null
+          lastChecked: rule.lastChecked ?? null,
+          projectId: rule.projectId
         }
       })
   }
 
-  async deleteAlertRule(id: string): Promise<void> {
-    await this.db.delete(schema.alertRules).where(eq(schema.alertRules.id, id))
+  async deleteAlertRule(id: string, projectId: string): Promise<void> {
+    await this.db.delete(schema.alertRules).where(and(eq(schema.alertRules.id, id), eq(schema.alertRules.projectId, projectId)))
   }
 
   async saveAlertHistory(entry: AlertHistoryEntry): Promise<void> {
     await this.db.insert(schema.alertHistory).values(entry)
   }
 
-  async getAlertHistory(ruleId?: string, limit = 100): Promise<AlertHistoryEntry[]> {
-    let q = this.db.select().from(schema.alertHistory)
+  async getAlertHistory(projectId: string, ruleId?: string, limit = 100): Promise<AlertHistoryEntry[]> {
+    let q = this.db.select().from(schema.alertHistory).where(eq(schema.alertHistory.projectId, projectId)) as any
     if (ruleId) {
-      q = q.where(eq(schema.alertHistory.ruleId, ruleId)) as any
+      q = q.where(and(eq(schema.alertHistory.projectId, projectId), eq(schema.alertHistory.ruleId, ruleId))) as any
     }
     return q.orderBy(desc(schema.alertHistory.timestamp)).limit(limit) as any
   }
 
   // ── Visualization ──────────────────────────────────────────────────────────
 
-  async getServiceMap(from?: number, to?: number): Promise<{ source: string, target: string, count: number }[]> {
+  async getServiceMap(projectId: string, from?: number, to?: number): Promise<{ source: string, target: string, count: number }[]> {
     const res = await this.pool.query({
       text: `
         SELECT 
@@ -370,15 +403,61 @@ export class PostgresStore implements IStore {
           COUNT(*)::int as count
         FROM traces c
         JOIN traces p ON c.parent_id = p.span_id
-        WHERE p.attributes->>'service.name' IS NOT NULL 
+        WHERE c.project_id = $1
+          AND p.attributes->>'service.name' IS NOT NULL 
           AND c.attributes->>'service.name' IS NOT NULL 
           AND p.attributes->>'service.name' != c.attributes->>'service.name'
           ${from ? `AND c.start_time >= ${from}` : ''}
           ${to ? `AND c.start_time <= ${to}` : ''}
         GROUP BY 1, 2
-      `
+      `,
+      values: [projectId]
     })
     return res.rows
+  }
+
+  // ── Project Management ──────────────────────────────────────────────────────
+
+  async getProjects(): Promise<import('../../domain/types').Project[]> {
+    const rows = await this.db.select().from(schema.projects)
+    return rows.map(r => ({ ...r, createdAt: Number(r.createdAt) }))
+  }
+
+  async saveProject(project: import('../../domain/types').Project): Promise<void> {
+    await this.db.insert(schema.projects).values({
+      id: project.id,
+      name: project.name,
+      createdAt: project.createdAt
+    }).onConflictDoUpdate({
+      target: schema.projects.id,
+      set: { name: project.name }
+    })
+  }
+
+  async getApiKeys(projectId: string): Promise<import('../../domain/types').ApiKey[]> {
+    const rows = await this.db.select().from(schema.apiKeys).where(eq(schema.apiKeys.projectId, projectId))
+    return rows.map(r => ({
+      ...r,
+      role: r.role as 'admin' | 'ingest',
+      createdAt: Number(r.createdAt)
+    }))
+  }
+
+  async saveApiKey(key: import('../../domain/types').ApiKey): Promise<void> {
+    await this.db.insert(schema.apiKeys).values({
+      ...key,
+      createdAt: key.createdAt
+    }).onConflictDoNothing()
+  }
+
+  async getApiKey(key: string): Promise<import('../../domain/types').ApiKey | null> {
+    const [row] = await this.db.select().from(schema.apiKeys).where(eq(schema.apiKeys.key, key))
+    if (!row) return null
+    return {
+      ...row,
+      role: row.role as 'admin' | 'ingest',
+      createdAt: Number(row.createdAt)
+    }
   }
 
   async end(): Promise<void> {

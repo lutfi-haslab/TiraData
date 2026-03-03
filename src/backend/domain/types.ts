@@ -9,6 +9,7 @@ export interface LogEntry {
   service: string
   message: string
   attributes: Record<string, unknown>
+  projectId: string
 }
 
 export interface MetricEntry {
@@ -16,6 +17,7 @@ export interface MetricEntry {
   name: string
   value: number
   labels: Record<string, string>
+  projectId: string
 }
 
 export interface TraceEntry {
@@ -26,6 +28,7 @@ export interface TraceEntry {
   duration: number // ms
   name: string
   attributes: Record<string, unknown>
+  projectId: string
 }
 
 // ─── Ingestion Payloads ───────────────────────────────────────────────────────
@@ -90,6 +93,7 @@ export interface AlertRule {
   intervalMs: number
   enabled: boolean
   lastChecked?: number
+  projectId: string
 }
 
 export interface AlertHistoryEntry {
@@ -98,4 +102,21 @@ export interface AlertHistoryEntry {
   timestamp: number
   value: number
   triggered: boolean
+  projectId: string
+}
+
+// ─── Project Management ──────────────────────────────────────────────────────
+
+export interface Project {
+  id: string
+  name: string
+  createdAt: number
+}
+
+export interface ApiKey {
+  key: string
+  projectId: string
+  name: string
+  role: 'admin' | 'ingest'
+  createdAt: number
 }

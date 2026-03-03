@@ -12,6 +12,18 @@ beforeAll(async () => {
   process.env.INGEST_KEY = INGEST_KEY
   const res = await createServer()
   app = res.app
+
+  // Register the INGEST_KEY in the store since we now use DB-backed keys
+  const { getStore } = await import('../../src/backend/infrastructure/http/server')
+  const store = getStore()!
+  await store.saveProject({ id: 'p1', name: 'Test Project', createdAt: Date.now() })
+  await store.saveApiKey({ 
+    key: INGEST_KEY, 
+    projectId: 'p1', 
+    name: 'Legacy Ingest Key', 
+    role: 'ingest',
+    createdAt: Date.now()
+  })
 })
 
 const fetchApi = (path: string, method = 'GET', body?: unknown, key?: string) =>

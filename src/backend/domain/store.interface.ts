@@ -17,6 +17,7 @@ export interface LogQueryParams {
   to?: number      // Unix ms
   limit?: number
   offset?: number
+  projectId: string
 }
 
 export interface MetricQueryParams {
@@ -25,6 +26,7 @@ export interface MetricQueryParams {
   to?: number
   limit?: number
   offset?: number
+  projectId: string
 }
 
 export interface TraceQueryParams {
@@ -33,6 +35,7 @@ export interface TraceQueryParams {
   to?: number
   limit?: number
   offset?: number
+  projectId: string
 }
 
 export interface TtlDeleteResult {
@@ -61,30 +64,38 @@ export interface IStore {
   // ── Read ─────────────────────────────────────────────────────────────────
   queryLogs(params: LogQueryParams): Promise<import('./types').PaginatedResponse<LogEntry>>
   queryMetrics(params: MetricQueryParams): Promise<import('./types').PaginatedResponse<MetricEntry>>
-  metricNames(): Promise<string[]>
+  metricNames(projectId: string): Promise<string[]>
   queryTraces(params: TraceQueryParams): Promise<import('./types').PaginatedResponse<TraceEntry>>
-  executeSql(sql: string): Promise<SqlQueryResult>
+  executeSql(sql: string, projectId: string): Promise<SqlQueryResult>
 
   // ── Stats ─────────────────────────────────────────────────────────────────
-  collectStats(queueSize: number, capacity: number): Promise<SystemStats>
+  collectStats(queueSize: number, capacity: number, projectId: string): Promise<SystemStats>
 
   // ── Maintenance ───────────────────────────────────────────────────────────
   /** Run VACUUM + ANALYZE (or equivalent) to reclaim space & update planner. */
   optimize(): Promise<{ durationMs: number }>
 
-  /** Delete all records older than the given Unix ms timestamps. */
+  /** Delete all records older than the given Unix ms timestamps. Scoped to project. */
   deleteBefore(params: {
     logsBefore?: number
     metricsBefore?: number
     tracesBefore?: number
+    projectId: string
   }): Promise<TtlDeleteResult>
 
   // ── Alerts ───────────────────────────────────────────────────────────────
-  getAlertRules(): Promise<AlertRule[]>
+  getAlertRules(projectId: string): Promise<AlertRule[]>
   saveAlertRule(rule: AlertRule): Promise<void>
-  deleteAlertRule(id: string): Promise<void>
+  deleteAlertRule(id: string, projectId: string): Promise<void>
   saveAlertHistory(entry: AlertHistoryEntry): Promise<void>
-  getAlertHistory(ruleId?: string, limit?: number): Promise<AlertHistoryEntry[]>
+  getAlertHistory(projectId: string, ruleId?: string, limit?: number): Promise<AlertHistoryEntry[]>
   // ── Visualization ──────────────────────────────────────────────────────────
-  getServiceMap(from?: number, to?: number): Promise<{ source: string, target: string, count: number }[]>
+  getServiceMap(projectId: string, from?: number, to?: number): Promise<{ source: string, target: string, count: number }[]>
+
+  // ── Project Management ──────────────────────────────────────────────────────
+  getProjects(): Promise<import('./types').Project[]>
+  saveProject(project: import('./types').Project): Promise<void>
+  getApiKeys(projectId: string): Promise<import('./types').ApiKey[]>
+  saveApiKey(key: import('./types').ApiKey): Promise<void>
+  getApiKey(key: string): Promise<import('./types').ApiKey | null>
 }

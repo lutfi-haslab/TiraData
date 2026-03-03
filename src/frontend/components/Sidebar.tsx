@@ -1,5 +1,6 @@
 import { Link, useRouterState } from '@tanstack/react-router'
-import { LayoutDashboard, ScrollText, BarChart2, GitFork, TerminalSquare, Zap, Sun, Moon } from 'lucide-react'
+import { LayoutDashboard, ScrollText, BarChart2, GitFork, TerminalSquare, Zap, Sun, Moon, Settings } from 'lucide-react'
+import { ProjectSelector } from './ProjectSelector'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../utils/api'
 import { useTheme } from '../context/ThemeContext'
@@ -10,6 +11,7 @@ const NAV = [
   { to: '/metrics', label: 'Metrics',      Icon: BarChart2 },
   { to: '/traces',  label: 'Trace Viewer', Icon: GitFork },
   { to: '/query',   label: 'SQL Editor',   Icon: TerminalSquare },
+  { to: '/settings', label: 'Settings',      Icon: Settings },
 ]
 
 export function Sidebar() {
@@ -32,6 +34,11 @@ export function Sidebar() {
           <Zap size={14} color="#fff" strokeWidth={2.5} />
         </div>
         <span className="text-sm font-semibold tracking-wide text-slate-800 dark:text-slate-100">tiradata</span>
+      </div>
+
+      {/* Project Selector */}
+      <div className="pt-4">
+        <ProjectSelector />
       </div>
 
       {/* Nav */}

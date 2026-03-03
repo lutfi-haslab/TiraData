@@ -17,6 +17,7 @@ const makeLog = (overrides: Partial<LogEntry> = {}): LogEntry => ({
   service:    'svc',
   message:    'msg',
   attributes: {},
+  projectId:  'p1',
   ...overrides,
 })
 
@@ -25,6 +26,7 @@ const makeMetric = (overrides: Partial<MetricEntry> = {}): MetricEntry => ({
   name:      'test.metric',
   value:     1.0,
   labels:    {},
+  projectId: 'p1',
   ...overrides,
 })
 
@@ -36,6 +38,7 @@ const makeTrace = (overrides: Partial<TraceEntry> = {}): TraceEntry => ({
   duration:   10,
   name:       'span',
   attributes: {},
+  projectId:  'p1',
   ...overrides,
 })
 
@@ -48,7 +51,7 @@ describe('SqliteStore (Drizzle) – combined filters', () => {
       makeLog({ service: 'api', level: 'info'  }),
       makeLog({ service: 'db',  level: 'error' }),
     ])
-    const { data: results } = await store.queryLogs({ service: 'api', level: 'error' })
+    const { data: results } = await store.queryLogs({ projectId: 'p1', service: 'api', level: 'error' })
     expect(results).toHaveLength(1)
     expect(results[0].service).toBe('api')
     expect(results[0].level).toBe('error')
@@ -62,6 +65,7 @@ describe('SqliteStore (Drizzle) – combined filters', () => {
       makeMetric({ name: 'mem', timestamp: now,        value: 50 }),
     ])
     const { data: results } = await store.queryMetrics({
+      projectId: 'p1',
       name: 'cpu',
       from: now - 1000,
       to:   now + 1000,
@@ -77,7 +81,7 @@ describe('SqliteStore (Drizzle) – combined filters', () => {
       makeTrace({ trace_id: 'A', span_id: 's2', start_time: now }),
       makeTrace({ trace_id: 'B', span_id: 's3', start_time: now }),
     ])
-    const { data: results } = await store.queryTraces({ trace_id: 'A', from: now - 1000 })
+    const { data: results } = await store.queryTraces({ projectId: 'p1', trace_id: 'A', from: now - 1000 })
     expect(results).toHaveLength(1)
     expect(results[0].span_id).toBe('s2')
   })
@@ -91,8 +95,8 @@ describe('SqliteStore (Drizzle) – pagination', () => {
         makeLog({ timestamp: now - i * 1000, message: `msg-${i}` })
       )
     )
-    const { data: page1 } = await store.queryLogs({ limit: 2, offset: 0 })
-    const { data: page2 } = await store.queryLogs({ limit: 2, offset: 2 })
+    const { data: page1 } = await store.queryLogs({ projectId: 'p1', limit: 2, offset: 0 })
+    const { data: page2 } = await store.queryLogs({ projectId: 'p1', limit: 2, offset: 2 })
 
     expect(page1).toHaveLength(2)
     expect(page2).toHaveLength(2)
@@ -102,7 +106,7 @@ describe('SqliteStore (Drizzle) – pagination', () => {
   it('clamps limit to max 1000 for logs', async () => {
     // Insert 3 rows, request 9999 — should still work without error
     await store.insertLogs(Array.from({ length: 3 }, () => makeLog()))
-    const { data: results } = await store.queryLogs({ limit: 9999 })
+    const { data: results } = await store.queryLogs({ projectId: 'p1', limit: 9999 })
     expect(results).toHaveLength(3)
   })
 })
@@ -119,7 +123,7 @@ describe('SqliteStore – optimize()', () => {
   it('does not corrupt data after VACUUM', async () => {
     await store.insertLogs([makeLog({ message: 'before vacuum' })])
     await store.optimize()
-    const { data: results } = await store.queryLogs({ limit: 10 })
+    const { data: results } = await store.queryLogs({ projectId: 'p1', limit: 10 })
     expect(results).toHaveLength(1)
     expect(results[0].message).toBe('before vacuum')
   })
@@ -141,13 +145,13 @@ describe('SqliteStore – deleteBefore() TTL', () => {
       makeLog({ timestamp: now          }),   // new — keep
     ])
 
-    const result = await store.deleteBefore({ logsBefore: now - 3_000 })
+    const result = await store.deleteBefore({ projectId: 'p1', logsBefore: now - 3_000 })
 
     expect(result.logs).toBe(2)
     expect(result.metrics).toBe(0)
     expect(result.traces).toBe(0)
 
-    const { data: remaining } = await store.queryLogs({ limit: 10 })
+    const { data: remaining } = await store.queryLogs({ projectId: 'p1', limit: 10 })
     expect(remaining).toHaveLength(1)
   })
 
@@ -158,10 +162,10 @@ describe('SqliteStore – deleteBefore() TTL', () => {
       makeMetric({ timestamp: now          }),
     ])
 
-    const result = await store.deleteBefore({ metricsBefore: now - 5_000 })
+    const result = await store.deleteBefore({ projectId: 'p1', metricsBefore: now - 5_000 })
     expect(result.metrics).toBe(1)
 
-    const { data: remaining } = await store.queryMetrics({})
+    const { data: remaining } = await store.queryMetrics({ projectId: 'p1' })
     expect(remaining).toHaveLength(1)
   })
 
@@ -172,10 +176,10 @@ describe('SqliteStore – deleteBefore() TTL', () => {
       makeTrace({ span_id: 's2', start_time: now          }),
     ])
 
-    const result = await store.deleteBefore({ tracesBefore: now - 5_000 })
+    const result = await store.deleteBefore({ projectId: 'p1', tracesBefore: now - 5_000 })
     expect(result.traces).toBe(1)
 
-    const { data: remaining } = await store.queryTraces({})
+    const { data: remaining } = await store.queryTraces({ projectId: 'p1' })
     expect(remaining).toHaveLength(1)
   })
 
@@ -188,6 +192,7 @@ describe('SqliteStore – deleteBefore() TTL', () => {
     await store.insertTraces([makeTrace({ span_id: 'x1', start_time: cutoff - 1000 })])
 
     const result = await store.deleteBefore({
+      projectId:     'p1',
       logsBefore:    cutoff,
       metricsBefore: cutoff,
       tracesBefore:  cutoff,
@@ -202,7 +207,7 @@ describe('SqliteStore – deleteBefore() TTL', () => {
     const now = Date.now()
     await store.insertLogs([makeLog({ timestamp: now })])
 
-    const result = await store.deleteBefore({ logsBefore: now - 10_000 })
+    const result = await store.deleteBefore({ projectId: 'p1', logsBefore: now - 10_000 })
     expect(result.logs).toBe(0)
   })
 
@@ -211,8 +216,8 @@ describe('SqliteStore – deleteBefore() TTL', () => {
     await store.insertLogs([makeLog({ timestamp: now - 10_000 })])
 
     const cutoff = now - 5_000
-    await store.deleteBefore({ logsBefore: cutoff })
-    const second = await store.deleteBefore({ logsBefore: cutoff })
+    await store.deleteBefore({ projectId: 'p1', logsBefore: cutoff })
+    const second = await store.deleteBefore({ projectId: 'p1', logsBefore: cutoff })
     expect(second.logs).toBe(0)
   })
 
@@ -222,11 +227,11 @@ describe('SqliteStore – deleteBefore() TTL', () => {
     await store.insertMetrics([makeMetric({ timestamp: now - 10_000 })])
 
     // Only delete logs, not metrics
-    const result = await store.deleteBefore({ logsBefore: now })
+    const result = await store.deleteBefore({ projectId: 'p1', logsBefore: now })
     expect(result.logs).toBe(1)
     expect(result.metrics).toBe(0)
 
-    const { data: metrics } = await store.queryMetrics({})
+    const { data: metrics } = await store.queryMetrics({ projectId: 'p1' })
     expect(metrics).toHaveLength(1)
   })
 })

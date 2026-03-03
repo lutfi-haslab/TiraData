@@ -31,15 +31,18 @@ export class AlertingEngine {
     this.isRunning = true
 
     try {
-      const rules = await this.store.getAlertRules()
-      const enabledRules = rules.filter(r => r.enabled)
-      const now = Date.now()
+      const projects = await this.store.getProjects()
+      for (const project of projects) {
+        const rules = await this.store.getAlertRules(project.id)
+        const enabledRules = rules.filter(r => r.enabled)
+        const now = Date.now()
 
-      for (const rule of enabledRules) {
-        const nextRun = (rule.lastChecked ?? 0) + rule.intervalMs
-        if (now < nextRun) continue
+        for (const rule of enabledRules) {
+          const nextRun = (rule.lastChecked ?? 0) + rule.intervalMs
+          if (now < nextRun) continue
 
-        await this.evaluateRule(rule)
+          await this.evaluateRule(rule)
+        }
       }
     } catch (e) {
       console.error('[Alerting] Run failed:', e)
@@ -50,9 +53,9 @@ export class AlertingEngine {
 
   private async evaluateRule(rule: AlertRule) {
     try {
-      console.log(`[Alerting] Evaluating rule: ${rule.name}`)
+      console.log(`[Alerting] Evaluating rule: ${rule.name} (Project: ${rule.projectId})`)
       
-      const result = await this.store.executeSql(rule.query)
+      const result = await this.store.executeSql(rule.query, rule.projectId)
       if (result.rows.length === 0) return
 
       // Assume first column of first row is the value
@@ -71,7 +74,8 @@ export class AlertingEngine {
         ruleId: rule.id,
         timestamp: Date.now(),
         value,
-        triggered
+        triggered,
+        projectId: rule.projectId
       }
 
       await this.store.saveAlertHistory(history)
@@ -83,7 +87,7 @@ export class AlertingEngine {
       })
 
       if (triggered) {
-        console.warn(`[ALERT TRIGGERED] ${rule.name}: current value ${value} is ${rule.condition} ${rule.threshold}`)
+        console.warn(`[ALERT TRIGGERED] [Project: ${rule.projectId}] ${rule.name}: current value ${value} is ${rule.condition} ${rule.threshold}`)
         // TODO: Notification channels (Slack, Email, etc.)
       }
     } catch (e) {

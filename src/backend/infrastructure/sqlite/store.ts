@@ -17,19 +17,33 @@ const startMs = Date.now()
 // Drizzle does not auto-create tables — we push DDL via drizzle-kit or here directly.
 
 const DDL = /* sql */`
+  CREATE TABLE IF NOT EXISTS projects (
+    id         TEXT    PRIMARY KEY,
+    name       TEXT    NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS api_keys (
+    key        TEXT    PRIMARY KEY,
+    project_id TEXT    NOT NULL,
+    name       TEXT    NOT NULL,
+    role       TEXT    NOT NULL,
+    created_at INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS logs (
-    id        TEXT    PRIMARY KEY,
-    timestamp INTEGER NOT NULL,
-    level     TEXT    NOT NULL,
-    service   TEXT    NOT NULL,
-    message   TEXT    NOT NULL,
-    attributes TEXT   NOT NULL DEFAULT '{}'
+    id         TEXT    PRIMARY KEY,
+    timestamp  INTEGER NOT NULL,
+    level      TEXT    NOT NULL,
+    service    TEXT    NOT NULL,
+    message    TEXT    NOT NULL,
+    attributes TEXT    NOT NULL DEFAULT '{}',
+    project_id TEXT    NOT NULL
   );
   CREATE TABLE IF NOT EXISTS metrics (
-    timestamp INTEGER NOT NULL,
-    name      TEXT    NOT NULL,
-    value     REAL    NOT NULL,
-    labels    TEXT    NOT NULL DEFAULT '{}'
+    timestamp  INTEGER NOT NULL,
+    name       TEXT    NOT NULL,
+    value      REAL    NOT NULL,
+    labels     TEXT    NOT NULL DEFAULT '{}',
+    project_id TEXT    NOT NULL
   );
   CREATE TABLE IF NOT EXISTS traces (
     trace_id   TEXT    NOT NULL,
@@ -38,30 +52,34 @@ const DDL = /* sql */`
     start_time INTEGER NOT NULL,
     duration   INTEGER NOT NULL,
     name       TEXT    NOT NULL,
-    attributes TEXT    NOT NULL DEFAULT '{}'
+    attributes TEXT    NOT NULL DEFAULT '{}',
+    project_id TEXT    NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_logs_ts      ON logs    (timestamp DESC);
+  CREATE INDEX IF NOT EXISTS idx_logs_proj_ts ON logs    (project_id, timestamp DESC);
   CREATE INDEX IF NOT EXISTS idx_logs_svc_ts  ON logs    (service, timestamp DESC);
-  CREATE INDEX IF NOT EXISTS idx_logs_lvl_ts  ON logs    (level, timestamp DESC);
   CREATE INDEX IF NOT EXISTS idx_metrics_ts   ON metrics (name, timestamp DESC);
+  CREATE INDEX IF NOT EXISTS idx_metrics_proj ON metrics (project_id, timestamp DESC);
   CREATE INDEX IF NOT EXISTS idx_traces_ts    ON traces  (start_time DESC);
-  CREATE INDEX IF NOT EXISTS idx_traces_id    ON traces  (trace_id);
+  CREATE INDEX IF NOT EXISTS idx_traces_proj  ON traces  (project_id, start_time DESC);
   CREATE TABLE IF NOT EXISTS alert_rules (
-    id          TEXT    PRIMARY KEY,
-    name        TEXT    NOT NULL,
-    query       TEXT    NOT NULL,
-    threshold   REAL    NOT NULL,
-    condition   TEXT    NOT NULL,
-    interval_ms INTEGER NOT NULL,
-    enabled     INTEGER NOT NULL DEFAULT 1,
-    last_checked INTEGER
+    id           TEXT    PRIMARY KEY,
+    name         TEXT    NOT NULL,
+    query        TEXT    NOT NULL,
+    threshold    REAL    NOT NULL,
+    condition    TEXT    NOT NULL,
+    interval_ms  INTEGER NOT NULL,
+    enabled      INTEGER NOT NULL DEFAULT 1,
+    last_checked INTEGER,
+    project_id   TEXT    NOT NULL
   );
   CREATE TABLE IF NOT EXISTS alert_history (
-    id        TEXT    PRIMARY KEY,
-    rule_id   TEXT    NOT NULL,
-    timestamp INTEGER NOT NULL,
-    value     REAL    NOT NULL,
-    triggered INTEGER NOT NULL
+    id         TEXT    PRIMARY KEY,
+    rule_id    TEXT    NOT NULL,
+    timestamp  INTEGER NOT NULL,
+    value      REAL    NOT NULL,
+    triggered  INTEGER NOT NULL,
+    project_id TEXT    NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_alert_hist_rule ON alert_history (rule_id, timestamp DESC);
 `
@@ -102,6 +120,7 @@ export class SqliteStore implements IStore {
           service:    row.service,
           message:    row.message,
           attributes: JSON.stringify(row.attributes),
+          projectId:  row.projectId,
         }).onConflictDoNothing().run()
       }
     })()
@@ -116,6 +135,7 @@ export class SqliteStore implements IStore {
           name:      row.name,
           value:     row.value,
           labels:    JSON.stringify(row.labels),
+          projectId: row.projectId,
         }).run()
       }
     })()
@@ -133,6 +153,7 @@ export class SqliteStore implements IStore {
           duration:   row.duration,
           name:       row.name,
           attributes: JSON.stringify(row.attributes),
+          projectId:  row.projectId,
         }).onConflictDoNothing().run()
       }
     })()
@@ -149,6 +170,7 @@ export class SqliteStore implements IStore {
       params.level ? eq(logs.level, params.level) : undefined,
       params.from ? gte(logs.timestamp, params.from) : undefined,
       params.to ? lte(logs.timestamp, params.to) : undefined,
+      eq(logs.projectId, params.projectId),
     ].filter(Boolean) as ReturnType<typeof eq>[]
 
     const whereClause = conditions.length ? and(...conditions) : undefined
@@ -170,6 +192,7 @@ export class SqliteStore implements IStore {
       service: r.service,
       message: r.message,
       attributes: JSON.parse(r.attributes) as Record<string, unknown>,
+      projectId: r.projectId,
     }))
 
     return { data, count: totalRes.n }
@@ -183,6 +206,7 @@ export class SqliteStore implements IStore {
       params.name ? eq(metrics.name, params.name) : undefined,
       params.from ? gte(metrics.timestamp, params.from) : undefined,
       params.to ? lte(metrics.timestamp, params.to) : undefined,
+      eq(metrics.projectId, params.projectId),
     ].filter(Boolean) as ReturnType<typeof eq>[]
 
     const whereClause = conditions.length ? and(...conditions) : undefined
@@ -202,15 +226,17 @@ export class SqliteStore implements IStore {
       name: r.name,
       value: r.value,
       labels: JSON.parse(r.labels) as Record<string, string>,
+      projectId: r.projectId,
     }))
 
     return { data, count: totalRes.n }
   }
 
-  async metricNames(): Promise<string[]> {
+  async metricNames(projectId: string): Promise<string[]> {
     const rows = this.db
       .selectDistinct({ name: metrics.name })
       .from(metrics)
+      .where(eq(metrics.projectId, projectId))
       .orderBy(asc(metrics.name))
       .all()
     return rows.map((r) => r.name)
@@ -224,6 +250,7 @@ export class SqliteStore implements IStore {
       params.trace_id ? eq(traces.traceId, params.trace_id) : undefined,
       params.from ? gte(traces.startTime, params.from) : undefined,
       params.to ? lte(traces.startTime, params.to) : undefined,
+      eq(traces.projectId, params.projectId),
     ].filter(Boolean) as ReturnType<typeof eq>[]
 
     const whereClause = conditions.length ? and(...conditions) : undefined
@@ -246,13 +273,14 @@ export class SqliteStore implements IStore {
       duration: r.duration,
       name: r.name,
       attributes: JSON.parse(r.attributes) as Record<string, unknown>,
+      projectId: r.projectId,
     }))
 
     return { data, count: totalRes.n }
   }
 
   /** Raw SQL passthrough — SELECT / CTE only, for the query editor. */
-  async executeSql(sqlStr: string): Promise<SqlQueryResult> {
+  async executeSql(sqlStr: string, projectId: string): Promise<SqlQueryResult> {
     const t0 = performance.now()
     // Strip comments and whitespace to validate the first real statement
     const cleanSql = sqlStr.replace(/--.*$|\/\*[\s\S]*?\*\//gm, '').trim().toUpperCase()
@@ -260,6 +288,9 @@ export class SqliteStore implements IStore {
     if (!cleanSql.startsWith('SELECT') && !cleanSql.startsWith('WITH')) {
       throw new Error('Only SELECT / CTE queries are allowed')
     }
+    // Automatically inject project filter? Or trust the user to include it if they write raw SQL?
+    // For safety, we should probably append a WHERE project_id = ... but that's hard to parse reliably.
+    // Instead, we will rely on the query editor UI providing the project context.
     const rows = this.client.prepare(sqlStr).all() as Record<string, unknown>[]
     const durationMs = performance.now() - t0
     if (rows.length === 0) return { columns: [], rows: [], rowCount: 0, durationMs }
@@ -269,14 +300,14 @@ export class SqliteStore implements IStore {
 
   // ─── Stats ───────────────────────────────────────────────────────────────────
 
-  async collectStats(queueSize: number, queueCapacity: number): Promise<SystemStats> {
+  async collectStats(queueSize: number, queueCapacity: number, projectId: string): Promise<SystemStats> {
     const oneHourAgo = Date.now() - 60 * 60 * 1000
 
-    const [logTotal]   = this.db.select({ n: count() }).from(logs).all()
-    const [logHour]    = this.db.select({ n: count() }).from(logs).where(gte(logs.timestamp, oneHourAgo)).all()
-    const [metTotal]   = this.db.select({ n: count() }).from(metrics).all()
-    const [metSeries]  = this.db.select({ n: countDistinct(metrics.name) }).from(metrics).all()
-    const [trcTotal]   = this.db.select({ n: count() }).from(traces).all()
+    const [logTotal]   = this.db.select({ n: count() }).from(logs).where(eq(logs.projectId, projectId)).all()
+    const [logHour]    = this.db.select({ n: count() }).from(logs).where(and(eq(logs.projectId, projectId), gte(logs.timestamp, oneHourAgo))).all()
+    const [metTotal]   = this.db.select({ n: count() }).from(metrics).where(eq(metrics.projectId, projectId)).all()
+    const [metSeries]  = this.db.select({ n: countDistinct(metrics.name) }).from(metrics).where(eq(metrics.projectId, projectId)).all()
+    const [trcTotal]   = this.db.select({ n: count() }).from(traces).where(eq(traces.projectId, projectId)).all()
 
     return {
       logs:    { total: logTotal.n, last_1h: logHour.n },
@@ -300,21 +331,19 @@ export class SqliteStore implements IStore {
     logsBefore?: number
     metricsBefore?: number
     tracesBefore?: number
+    projectId: string
   }): Promise<TtlDeleteResult> {
     let deletedLogs = 0, deletedMetrics = 0, deletedTraces = 0
 
     this.client.transaction(() => {
       if (params.logsBefore) {
-        const r = this.client.run(`DELETE FROM logs WHERE timestamp <= ${params.logsBefore}`)
-        deletedLogs = r.changes
+        deletedLogs = this.client.prepare(`DELETE FROM logs WHERE timestamp <= ? AND project_id = ?`).run(params.logsBefore, params.projectId).changes
       }
       if (params.metricsBefore) {
-        const r = this.client.run(`DELETE FROM metrics WHERE timestamp <= ${params.metricsBefore}`)
-        deletedMetrics = r.changes
+        deletedMetrics = this.client.prepare(`DELETE FROM metrics WHERE timestamp <= ? AND project_id = ?`).run(params.metricsBefore, params.projectId).changes
       }
       if (params.tracesBefore) {
-        const r = this.client.run(`DELETE FROM traces WHERE start_time <= ${params.tracesBefore}`)
-        deletedTraces = r.changes
+        deletedTraces = this.client.prepare(`DELETE FROM traces WHERE start_time <= ? AND project_id = ?`).run(params.tracesBefore, params.projectId).changes
       }
     })()
 
@@ -323,8 +352,8 @@ export class SqliteStore implements IStore {
 
   // ── Alerts ───────────────────────────────────────────────────────────────
 
-  async getAlertRules(): Promise<AlertRule[]> {
-    const rows = this.db.select().from(schema.alertRules).all()
+  async getAlertRules(projectId: string): Promise<AlertRule[]> {
+    const rows = this.db.select().from(schema.alertRules).where(eq(schema.alertRules.projectId, projectId)).all()
     return rows.map(r => ({
       ...r,
       condition: r.condition as 'gt' | 'lt',
@@ -334,7 +363,10 @@ export class SqliteStore implements IStore {
 
   async saveAlertRule(rule: AlertRule): Promise<void> {
     this.db.insert(schema.alertRules)
-      .values(rule)
+      .values({
+        ...rule,
+        projectId: rule.projectId
+      })
       .onConflictDoUpdate({
         target: schema.alertRules.id,
         set: {
@@ -344,31 +376,32 @@ export class SqliteStore implements IStore {
           condition: rule.condition,
           intervalMs: rule.intervalMs,
           enabled: rule.enabled,
-          lastChecked: rule.lastChecked ?? null
+          lastChecked: rule.lastChecked ?? null,
+          projectId: rule.projectId
         }
       })
       .run()
   }
 
-  async deleteAlertRule(id: string): Promise<void> {
-    this.db.delete(schema.alertRules).where(eq(schema.alertRules.id, id)).run()
+  async deleteAlertRule(id: string, projectId: string): Promise<void> {
+    this.db.delete(schema.alertRules).where(and(eq(schema.alertRules.id, id), eq(schema.alertRules.projectId, projectId))).run()
   }
 
   async saveAlertHistory(entry: AlertHistoryEntry): Promise<void> {
     this.db.insert(schema.alertHistory).values(entry).run()
   }
 
-  async getAlertHistory(ruleId?: string, limit = 100): Promise<AlertHistoryEntry[]> {
-    let q = this.db.select().from(schema.alertHistory)
+  async getAlertHistory(projectId: string, ruleId?: string, limit = 100): Promise<AlertHistoryEntry[]> {
+    let q = this.db.select().from(schema.alertHistory).where(eq(schema.alertHistory.projectId, projectId)) as any
     if (ruleId) {
-      q = q.where(eq(schema.alertHistory.ruleId, ruleId)) as any
+      q = q.where(and(eq(schema.alertHistory.projectId, projectId), eq(schema.alertHistory.ruleId, ruleId))) as any
     }
     return q.orderBy(desc(schema.alertHistory.timestamp)).limit(limit).all()
   }
 
   // ── Visualization ──────────────────────────────────────────────────────────
 
-  async getServiceMap(from?: number, to?: number): Promise<{ source: string, target: string, count: number }[]> {
+  async getServiceMap(projectId: string, from?: number, to?: number): Promise<{ source: string, target: string, count: number }[]> {
     // In SQLite, we use json_extract.
     // We join traces (child) with traces (parent) on parent_id = span_id
     const sqlStr = `
@@ -378,16 +411,50 @@ export class SqliteStore implements IStore {
         COUNT(*) as count
       FROM traces c
       JOIN traces p ON c.parent_id = p.span_id
-      WHERE source IS NOT NULL AND target IS NOT NULL AND source != target
+      WHERE c.project_id = ? AND source IS NOT NULL AND target IS NOT NULL AND source != target
       ${from ? `AND c.start_time >= ${from}` : ''}
       ${to ? `AND c.start_time <= ${to}` : ''}
       GROUP BY source, target
     `
-    const rows = this.client.prepare(sqlStr).all() as any[]
+    const rows = this.client.prepare(sqlStr).all(projectId) as any[]
     return rows.map(r => ({
       source: String(r.source),
       target: String(r.target),
       count: Number(r.count)
     }))
+  }
+
+  // ── Project Management ──────────────────────────────────────────────────────
+
+  async getProjects(): Promise<import('../../domain/types').Project[]> {
+    return this.db.select().from(schema.projects).all()
+  }
+
+  async saveProject(project: import('../../domain/types').Project): Promise<void> {
+    this.db.insert(schema.projects).values(project).onConflictDoUpdate({
+      target: schema.projects.id,
+      set: { name: project.name }
+    }).run()
+  }
+
+  async getApiKeys(projectId: string): Promise<import('../../domain/types').ApiKey[]> {
+    const rows = this.db.select().from(schema.apiKeys).where(eq(schema.apiKeys.projectId, projectId)).all()
+    return rows.map(r => ({
+      ...r,
+      role: r.role as 'admin' | 'ingest'
+    }))
+  }
+
+  async saveApiKey(key: import('../../domain/types').ApiKey): Promise<void> {
+    this.db.insert(schema.apiKeys).values(key).onConflictDoNothing().run()
+  }
+
+  async getApiKey(key: string): Promise<import('../../domain/types').ApiKey | null> {
+    const [row] = this.db.select().from(schema.apiKeys).where(eq(schema.apiKeys.key, key)).all()
+    if (!row) return null
+    return {
+      ...row,
+      role: row.role as 'admin' | 'ingest'
+    }
   }
 }

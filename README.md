@@ -270,3 +270,4 @@ CREATE TABLE traces (
 - [x] **Phase 3** — Query result caching, automated background TTL cleanup job
 - [x] **Phase 3** — API key authentication, RBAC
 - [x] **Phase 4** — Real-time Log Tailing (WebSockets), Alerting Engine, Service Map
+- [ ] **Phase 5** — Multi-Project Isolation, Dynamic API Keys, Advanced UI (React Flow, Alerting Dashboard)

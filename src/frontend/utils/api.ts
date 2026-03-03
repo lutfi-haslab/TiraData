@@ -51,10 +51,31 @@ export interface SqlQueryResult {
   error?: string
 }
 
+export interface Project {
+  id: string
+  name: string
+  createdAt: number
+}
+
+export interface ApiKey {
+  key: string
+  projectId: string
+  name: string
+  role: 'admin' | 'ingest'
+  createdAt: number
+}
+
 // ─── Core Fetch Helper ────────────────────────────────────────────────────────
 
 async function apiFetch<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-  const res = await fetch(input, init)
+  const apiKey = localStorage.getItem('tira_api_key') || ''
+  const projectId = localStorage.getItem('tira_project_id') || ''
+
+  const headers = new Headers(init?.headers)
+  if (apiKey) headers.set('X-API-Key', apiKey)
+  if (projectId) headers.set('X-Project-Id', projectId)
+
+  const res = await fetch(input, { ...init, headers })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
     throw new Error(`[${res.status}] ${text}`)
@@ -137,5 +158,26 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+    }),
+
+  // ── Admin: Projects & Keys ───────────────────────────────────────────────
+  getProjects: () =>
+    apiFetch<Project[]>('/api/admin/projects'),
+
+  createProject: (name: string, id?: string) =>
+    apiFetch<{ success: boolean; project: Project }>('/api/admin/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, id }),
+    }),
+
+  getKeys: () =>
+    apiFetch<ApiKey[]>('/api/admin/keys'),
+
+  createKey: (name: string, role: 'admin' | 'ingest' = 'ingest') =>
+    apiFetch<{ success: boolean; key: ApiKey }>('/api/admin/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, role }),
     }),
 }
