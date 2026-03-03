@@ -11,6 +11,9 @@ beforeAll(async () => {
   // Override DB_PATH so tests use a temp in-memory DB
   process.env.STORE   = 'sqlite'
   process.env.DB_PATH = ':memory:'
+  // Ensure we run in open mode for these tests
+  delete process.env.MASTER_KEY
+  delete process.env.INGEST_KEY
   app = await createServer()
 })
 

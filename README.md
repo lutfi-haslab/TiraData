@@ -266,6 +266,6 @@ CREATE TABLE traces (
 - [x] **Phase 1** — HTTP ingestion, memory queue, SQLite, SQL query editor, React UI
 - [x] **Phase 2** — Drizzle ORM, IStore interface, PostgreSQL adapter (`pg`), TTL cleanup, admin endpoints
 - [x] **Phase 2+** — Persistent WAL queue (crash recovery), index optimization
-- [ ] **Phase 3** — gRPC ingestion, OpenTelemetry native receiver
-- [ ] **Phase 3** — Query result caching, retention/TTL cleanup job
-- [ ] **Phase 3** — API key authentication, RBAC
+- [x] **Phase 3** — gRPC ingestion, OpenTelemetry native receiver (OTLP/HTTP)
+- [x] **Phase 3** — Query result caching, automated background TTL cleanup job
+- [x] **Phase 3** — API key authentication, RBAC

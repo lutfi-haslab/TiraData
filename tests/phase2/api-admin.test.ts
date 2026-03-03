@@ -6,6 +6,9 @@ let app: Awaited<ReturnType<typeof createServer>>
 beforeAll(async () => {
   process.env.STORE   = 'sqlite'
   process.env.DB_PATH = ':memory:'
+  // Run high-level tests without auth requirement
+  delete process.env.MASTER_KEY
+  delete process.env.INGEST_KEY
   app = await createServer()
 })
 

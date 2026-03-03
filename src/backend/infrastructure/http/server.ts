@@ -5,6 +5,9 @@ import { IngestionQueue } from '../queue/ingestion-queue'
 import { WALQueue } from '../queue/wal-queue'
 import { createStore } from '../store-factory'
 import { normaliseLog, normaliseMetric, normaliseTrace } from '../../usecases/normalise'
+import { mapOTLPLogs, mapOTLPMetrics, mapOTLPTraces } from '../../usecases/otlp-mapper'
+import { authMiddleware } from './middleware'
+import { queryCache } from '../cache/query-cache'
 import type { IStore } from '../../domain/store.interface'
 import type { IIngestionQueue } from '../../domain/queue.interface'
 import type {
@@ -42,6 +45,8 @@ export const createServer = async () => {
   // ── Global middleware ──────────────────────────────────────────────────────
   app.use('*', logger())
   app.use('*', cors({ origin: '*' }))
+  app.use('/api/*', authMiddleware)
+  app.use('/v1/*', authMiddleware) // OTLP routes
 
   // ── Health ─────────────────────────────────────────────────────────────────
   app.get('/api/health', (c) =>
@@ -84,43 +89,110 @@ export const createServer = async () => {
     return c.json({ success: true, span_id: entry.span_id, accepted }, accepted ? 202 : 429)
   })
 
+  // ── OTLP (OpenTelemetry) Ingestion ─────────────────────────────────────────
+  app.post('/v1/logs', async (c) => {
+    const body = await c.req.json()
+    const entries = mapOTLPLogs(body)
+    if (entries.length === 0) return c.json({ partialSuccess: false }, 200)
+
+    let accepted = 0
+    for (const e of entries) {
+      if (_queue!.enqueueLog(e)) accepted++
+    }
+    return c.json({ partialSuccess: accepted < entries.length }, 
+      accepted > 0 ? 200 : 429)
+  })
+
+  app.post('/v1/metrics', async (c) => {
+    const body = await c.req.json()
+    const entries = mapOTLPMetrics(body)
+    if (entries.length === 0) return c.json({ partialSuccess: false }, 200)
+
+    let accepted = 0
+    for (const e of entries) {
+      if (_queue!.enqueueMetric(e)) accepted++
+    }
+    return c.json({ partialSuccess: accepted < entries.length }, 
+      accepted > 0 ? 200 : 429)
+  })
+
+  app.post('/v1/traces', async (c) => {
+    const body = await c.req.json()
+    const entries = mapOTLPTraces(body)
+    if (entries.length === 0) return c.json({ partialSuccess: false }, 200)
+
+    let accepted = 0
+    for (const e of entries) {
+      if (_queue!.enqueueTrace(e)) accepted++
+    }
+    return c.json({ partialSuccess: accepted < entries.length }, 
+      accepted > 0 ? 200 : 429)
+  })
+
   // ── Query ──────────────────────────────────────────────────────────────────
   app.get('/api/logs', async (c) => {
     const q = c.req.query()
-    return c.json(await _store!.queryLogs({
+    const cacheKey = `logs:${c.req.url}`
+    const cached = queryCache.get(cacheKey)
+    if (cached) return c.json(cached)
+
+    const result = await _store!.queryLogs({
       service: q.service,
       level: q.level,
       from: q.from ? Number(q.from) : undefined,
       to: q.to ? Number(q.to) : undefined,
       limit: q.limit ? Number(q.limit) : 200,
       offset: q.offset ? Number(q.offset) : 0,
-    }))
+    })
+
+    queryCache.set(cacheKey, result)
+    return c.json(result)
   })
 
   app.get('/api/metrics', async (c) => {
     const q = c.req.query()
-    return c.json(await _store!.queryMetrics({
+    const cacheKey = `metrics:${c.req.url}`
+    const cached = queryCache.get(cacheKey)
+    if (cached) return c.json(cached)
+
+    const result = await _store!.queryMetrics({
       name: q.name,
       from: q.from ? Number(q.from) : undefined,
       to: q.to ? Number(q.to) : undefined,
       limit: q.limit ? Number(q.limit) : 500,
       offset: q.offset ? Number(q.offset) : 0,
-    }))
+    })
+
+    queryCache.set(cacheKey, result)
+    return c.json(result)
   })
 
-  app.get('/api/metrics/names', async (c) =>
-    c.json({ data: await _store!.metricNames() })
-  )
+  app.get('/api/metrics/names', async (c) => {
+    const cacheKey = 'metrics:names'
+    const cached = queryCache.get(cacheKey)
+    if (cached) return c.json(cached)
+
+    const result = { data: await _store!.metricNames() }
+    queryCache.set(cacheKey, result, 60000) // Cache names for 1 min
+    return c.json(result)
+  })
 
   app.get('/api/traces', async (c) => {
     const q = c.req.query()
-    return c.json(await _store!.queryTraces({
+    const cacheKey = `traces:${c.req.url}`
+    const cached = queryCache.get(cacheKey)
+    if (cached) return c.json(cached)
+
+    const result = await _store!.queryTraces({
       trace_id: q.trace_id,
       from: q.from ? Number(q.from) : undefined,
       to: q.to ? Number(q.to) : undefined,
       limit: q.limit ? Number(q.limit) : 200,
       offset: q.offset ? Number(q.offset) : 0,
-    }))
+    })
+
+    queryCache.set(cacheKey, result)
+    return c.json(result)
   })
 
   app.post('/api/query/sql', async (c) => {
@@ -132,8 +204,13 @@ export const createServer = async () => {
       return c.json({ error: '`sql` field is required' }, 400)
     }
 
+    const cacheKey = `sql:${body.sql}`
+    const cached = queryCache.get(cacheKey)
+    if (cached) return c.json(cached)
+
     try {
       const result = await _store!.executeSql(body.sql)
+      queryCache.set(cacheKey, result)
       return c.json(result)
     } catch (err) {
       return c.json({ error: (err as Error).message }, 400)
