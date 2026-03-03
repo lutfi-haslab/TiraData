@@ -1,0 +1,62 @@
+# ─── Dependencies ─────────────────────────────────────────────────────────────
+node_modules/
+
+# ─── Build Output ─────────────────────────────────────────────────────────────
+dist/
+dist-ssr/
+
+# ─── Bun ──────────────────────────────────────────────────────────────────────
+# bun.lock is intentionally committed for reproducible installs
+# bun.lockb is the binary lockfile format (older Bun versions)
+bun.lockb
+
+# ─── Database ─────────────────────────────────────────────────────────────────
+# SQLite data files — these are runtime state, not source code
+*.db
+*.db-shm
+*.db-wal
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ─── Environment & Secrets ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── TypeScript Build Cache ───────────────────────────────────────────────────
+*.tsbuildinfo
+
+# ─── Vite / TanStack Router Generated Files ───────────────────────────────────
+# routeTree.gen.ts is auto-generated on dev start — do NOT commit
+src/frontend/routeTree.gen.ts
+.tanstack/
+
+# ─── OS & Editor ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.local
+
+# VSCode (keep extensions.json for team consistency)
+.vscode/*
+!.vscode/extensions.json
+
+# JetBrains IDEs
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ─── Misc ─────────────────────────────────────────────────────────────────────
+*.local
+.cache/
+tmp/
+docs/
