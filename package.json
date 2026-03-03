@@ -6,6 +6,8 @@
   "scripts": {
     "dev:frontend": "vite",
     "dev:backend": "bun run --watch src/backend/app.ts",
+    "kill": "bun run scripts/kill-ports.ts",
+    "predev": "bun run kill",
     "dev": "concurrently \"bun run dev:frontend\" \"bun run dev:backend\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
@@ -18,6 +20,8 @@
     "test:all": "bun test tests/"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.3",
+    "@grpc/proto-loader": "^0.8.0",
     "@monaco-editor/react": "^4.7.0",
     "@tailwindcss/vite": "^4.2.1",
     "@tanstack/react-query": "^5.90.21",

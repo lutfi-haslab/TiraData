@@ -18,8 +18,8 @@ function mapAttributes(attrs: OTLPAttribute[] = []): Record<string, any> {
   return result
 }
 
-export function mapOTLPLogs(body: any): LogEntry[] {
-  const entries: LogEntry[] = []
+export function mapOTLPLogs(body: any): Omit<LogEntry, 'projectId'>[] {
+  const entries: Omit<LogEntry, 'projectId'>[] = []
   const resourceLogs = body.resourceLogs || []
 
   for (const resLog of resourceLogs) {
@@ -31,7 +31,7 @@ export function mapOTLPLogs(body: any): LogEntry[] {
         entries.push({
           id: generateId(),
           timestamp: Math.floor(Number(record.timeUnixNano || Date.now() * 1000000) / 1000000),
-          level: (record.severityText || 'INFO').toLowerCase(),
+          level: (record.severityText || 'INFO').toLowerCase() as any,
           service: serviceName,
           message: record.body?.stringValue || JSON.stringify(record.body) || '',
           attributes: { ...baseAttrs, ...mapAttributes(record.attributes) }
@@ -42,8 +42,8 @@ export function mapOTLPLogs(body: any): LogEntry[] {
   return entries
 }
 
-export function mapOTLPMetrics(body: any): MetricEntry[] {
-  const entries: MetricEntry[] = []
+export function mapOTLPMetrics(body: any): Omit<MetricEntry, 'projectId'>[] {
+  const entries: Omit<MetricEntry, 'projectId'>[] = []
   const resourceMetrics = body.resourceMetrics || []
 
   for (const resMet of resourceMetrics) {
@@ -69,22 +69,28 @@ export function mapOTLPMetrics(body: any): MetricEntry[] {
   return entries
 }
 
-export function mapOTLPTraces(body: any): TraceEntry[] {
-  const entries: TraceEntry[] = []
-  const resourceSpans = body.resourceSpans || []
+function formatId(id: any): string {
+  if (id instanceof Buffer) return id.toString('hex')
+  if (typeof id === 'string') return id
+  return String(id || '')
+}
+
+export function mapOTLPTraces(body: any): Omit<TraceEntry, 'projectId'>[] {
+  const entries: Omit<TraceEntry, 'projectId'>[] = []
+  const resourceSpans = body.resourceSpans || body.resource_spans || []
 
   for (const resSpan of resourceSpans) {
     const baseAttrs = mapAttributes(resSpan.resource?.attributes)
 
-    for (const scopeSpan of (resSpan.scopeSpans || [])) {
+    for (const scopeSpan of (resSpan.scopeSpans || resSpan.scope_spans || [])) {
       for (const span of (scopeSpan.spans || [])) {
-        const start = Math.floor(Number(span.startTimeUnixNano) / 1000000)
-        const end   = Math.floor(Number(span.endTimeUnixNano) / 1000000)
+        const start = Math.floor(Number(span.startTimeUnixNano || span.start_time_unix_nano) / 1000000)
+        const end   = Math.floor(Number(span.endTimeUnixNano || span.end_time_unix_nano) / 1000000)
         
         entries.push({
-          trace_id: span.traceId,
-          span_id: span.spanId,
-          parent_id: span.parentSpanId || null,
+          trace_id: formatId(span.traceId || span.trace_id),
+          span_id: formatId(span.spanId || span.span_id),
+          parent_id: span.parentSpanId || span.parent_span_id ? formatId(span.parentSpanId || span.parent_span_id) : null,
           start_time: start,
           duration: Math.max(0, end - start),
           name: span.name,
