@@ -120,3 +120,19 @@ export interface ApiKey {
   role: 'admin' | 'ingest'
   createdAt: number
 }
+
+// ─── User Management ────────────────────────────────────────────────────────
+
+export interface UserProject {
+  userId: string
+  projectId: string
+  role: 'admin' | 'viewer'
+  createdAt: number
+}
+
+export interface User {
+  id: string
+  email: string
+  passwordHash: string
+  createdAt: number
+}

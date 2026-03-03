@@ -1,6 +1,6 @@
 import { Pool } from 'pg'
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
-import { and, asc, count, countDistinct, desc, eq, gte, lte, sql } from 'drizzle-orm'
+import { inArray, and, asc, count, countDistinct, desc, eq, gte, lte, sql } from 'drizzle-orm'
 
 import { logs, metrics, traces, schema } from '../db/schema.pg'
 import type { PgSchema } from '../db/schema.pg'
@@ -90,6 +90,22 @@ const DDL = /* sql */`
     project_id VARCHAR(128) NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_alert_hist_rule ON alert_history (rule_id, timestamp DESC);
+  
+  CREATE TABLE IF NOT EXISTS users (
+    id            VARCHAR(128) PRIMARY KEY,
+    email         VARCHAR(256) NOT NULL UNIQUE,
+    password_hash VARCHAR(256) NOT NULL,
+    created_at    BIGINT       NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS user_projects (
+    user_id     VARCHAR(128) NOT NULL,
+    project_id  VARCHAR(128) NOT NULL,
+    role        VARCHAR(32)  NOT NULL,
+    created_at  BIGINT       NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_up_user ON user_projects (user_id);
+  CREATE INDEX IF NOT EXISTS idx_up_proj ON user_projects (project_id);
 `
 
 // ─── PostgreSQL Store (Drizzle + pg) ─────────────────────────────────────────
@@ -294,7 +310,16 @@ export class PostgresStore implements IStore {
     if (!cleanSql.startsWith('SELECT') && !cleanSql.startsWith('WITH')) {
       throw new Error('Only SELECT / CTE queries are allowed')
     }
-    const result = await this.pool.query(sqlStr)
+
+    let safeSql = sqlStr
+    if (projectId !== 'master') {
+      if (/\b(users|projects|api_keys)\b/i.test(safeSql)) {
+        throw new Error('Unauthorized table access')
+      }
+      safeSql = safeSql.replace(/\b(logs|metrics|traces)\b/gi, `(SELECT * FROM $1 WHERE project_id = '${projectId.replace(/'/g, "''")}')`)
+    }
+
+    const result = await this.pool.query(safeSql)
     const durationMs = performance.now() - t0
     const columns = result.fields.map((f) => f.name)
     const rows = result.rows.map((r) => columns.map((c) => r[c]))
@@ -418,9 +443,25 @@ export class PostgresStore implements IStore {
 
   // ── Project Management ──────────────────────────────────────────────────────
 
-  async getProjects(): Promise<import('../../domain/types').Project[]> {
-    const rows = await this.db.select().from(schema.projects)
+  async getProjects(userId?: string): Promise<import('../../domain/types').Project[]> {
+    if (!userId) {
+      const rows = await this.db.select().from(schema.projects)
+      return rows.map(r => ({ ...r, createdAt: Number(r.createdAt) }))
+    }
+    const userProjs = await this.db.select().from(schema.userProjects).where(eq(schema.userProjects.userId, userId))
+    if (userProjs.length === 0) return []
+    const projectIds = userProjs.map(p => p.projectId)
+    const rows = await this.db.select().from(schema.projects).where(inArray(schema.projects.id, projectIds))
     return rows.map(r => ({ ...r, createdAt: Number(r.createdAt) }))
+  }
+
+  async shareProject(userProject: import('../../domain/types').UserProject): Promise<void> {
+    await this.db.insert(schema.userProjects).values(userProject).onConflictDoNothing()
+  }
+
+  async getUserProjects(projectId: string): Promise<import('../../domain/types').UserProject[]> {
+    const rows = await this.db.select().from(schema.userProjects).where(eq(schema.userProjects.projectId, projectId))
+    return rows.map(r => ({ ...r, role: r.role as 'admin' | 'viewer', createdAt: Number(r.createdAt) }))
   }
 
   async saveProject(project: import('../../domain/types').Project): Promise<void> {
@@ -457,6 +498,39 @@ export class PostgresStore implements IStore {
       ...row,
       role: row.role as 'admin' | 'ingest',
       createdAt: Number(row.createdAt)
+    }
+  }
+
+  // ── User Management ───────────────────────────────────────────────────────
+
+  async saveUser(user: import('../../domain/types').User): Promise<void> {
+    await this.db.insert(schema.users).values({
+      id: user.id,
+      email: user.email,
+      passwordHash: user.passwordHash,
+      createdAt: user.createdAt,
+    }).onConflictDoNothing()
+  }
+
+  async getUserByEmail(email: string): Promise<import('../../domain/types').User | null> {
+    const [row] = await this.db.select().from(schema.users).where(eq(schema.users.email, email))
+    if (!row) return null
+    return {
+      id: row.id,
+      email: row.email,
+      passwordHash: row.passwordHash,
+      createdAt: Number(row.createdAt),
+    }
+  }
+
+  async getUserById(id: string): Promise<import('../../domain/types').User | null> {
+    const [row] = await this.db.select().from(schema.users).where(eq(schema.users.id, id))
+    if (!row) return null
+    return {
+      id: row.id,
+      email: row.email,
+      passwordHash: row.passwordHash,
+      createdAt: Number(row.createdAt),
     }
   }
 

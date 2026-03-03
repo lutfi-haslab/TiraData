@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { sign } from 'hono/jwt'
 import { logger } from 'hono/logger'
 import { createBunWebSocket } from 'hono/bun'
 import { IngestionQueue } from '../queue/ingestion-queue'
@@ -44,7 +45,7 @@ export const createServer = async () => {
     _queue = new IngestionQueue(10_000, flushFn)
   }
 
-  const app = new Hono<{ Variables: { projectId: string, role: string } }>()
+  const app = new Hono<{ Variables: { projectId: string, role: string, userId?: string } }>()
 
   // ── Global middleware ──────────────────────────────────────────────────────
   app.use('*', logger())
@@ -265,13 +266,77 @@ export const createServer = async () => {
     if (cached) return c.json(cached)
 
     try {
-      const pid = getPID(c)
-      const result = await _store!.executeSql(body.sql, pid)
+      // For isolation logic we need the raw context projectId (may be 'master'),
+      // not the getPID() which downcasts 'master' to a specific project.
+      const rawPid = c.get('projectId') as string || 'default'
+      const result = await _store!.executeSql(body.sql, rawPid)
       queryCache.set(cacheKey, result)
       return c.json(result)
     } catch (err) {
       return c.json({ error: (err as Error).message }, 400)
     }
+  })
+
+  // ── Auth ───────────────────────────────────────────────────────────────────
+
+  app.post('/api/auth/signup', async (c) => {
+    let body: any
+    try { body = await c.req.json() } catch { return c.json({ error: 'Invalid JSON' }, 400) }
+    
+    if (!body.email || !body.password) {
+      return c.json({ error: 'Email and password required' }, 400)
+    }
+
+    const existing = await _store!.getUserByEmail(body.email)
+    if (existing) {
+      return c.json({ error: 'User already exists with this email' }, 409)
+    }
+
+    const passwordHash = await Bun.password.hash(body.password, { algorithm: 'bcrypt', cost: 10 })
+    const user = {
+      id: crypto.randomUUID(),
+      email: body.email,
+      passwordHash,
+      createdAt: Date.now()
+    }
+    await _store!.saveUser(user)
+
+    const token = await sign({ userId: user.id }, Bun.env.JWT_SECRET || 'super-secret-tira-key', 'HS256')
+    return c.json({ success: true, token, user: { id: user.id, email: user.email } }, 201)
+  })
+
+  app.post('/api/auth/login', async (c) => {
+    let body: any
+    try { body = await c.req.json() } catch { return c.json({ error: 'Invalid JSON' }, 400) }
+
+    if (!body.email || !body.password) {
+      return c.json({ error: 'Email and password required' }, 400)
+    }
+
+    const user = await _store!.getUserByEmail(body.email)
+    if (!user) {
+      return c.json({ error: 'Invalid credentials' }, 401)
+    }
+
+    const isValid = await Bun.password.verify(body.password, user.passwordHash)
+    if (!isValid) {
+      return c.json({ error: 'Invalid credentials' }, 401)
+    }
+
+    const token = await sign({ userId: user.id }, Bun.env.JWT_SECRET || 'super-secret-tira-key', 'HS256')
+    return c.json({ success: true, token, user: { id: user.id, email: user.email } })
+  })
+
+  app.get('/api/auth/me', async (c) => {
+    const userId = c.get('userId' as any)
+    if (!userId) {
+      return c.json({ user: { id: 'admin', email: 'admin@tiradata' }, token: null })
+    }
+    const user = await _store!.getUserById(userId)
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404)
+    }
+    return c.json({ user: { id: user.id, email: user.email }, token: null })
   })
 
   // ── Admin ──────────────────────────────────────────────────────────────────
@@ -313,8 +378,9 @@ export const createServer = async () => {
 
   // ── Projects & API Keys ───────────────────────────────────────────────────
   app.get('/api/admin/projects', async (c) => {
-    if (c.get('projectId') !== 'master') return c.json({ error: 'System admin only' }, 403)
-    return c.json(await _store!.getProjects())
+    const userId = c.get('userId')
+    if (!userId && c.get('projectId') !== 'master') return c.json({ error: 'System admin only' }, 403)
+    return c.json(await _store!.getProjects(userId))
   })
 
   app.post('/api/admin/projects', async (c) => {
@@ -322,7 +388,33 @@ export const createServer = async () => {
     const body = await c.req.json()
     const proj = { id: body.id || crypto.randomUUID(), name: body.name, createdAt: Date.now() }
     await _store!.saveProject(proj)
+    
+    const userId = c.get('userId')
+    if (userId) {
+      await _store!.shareProject({ userId, projectId: proj.id, role: 'admin', createdAt: Date.now() })
+    }
     return c.json({ success: true, project: proj })
+  })
+
+  app.post('/api/admin/projects/:id/share', async (c) => {
+    const pid = c.req.param('id')
+    if (c.get('projectId') !== 'master' && c.get('projectId') !== pid) return c.json({ error: 'Admin only' }, 403)
+    const body = await c.req.json()
+    const user = await _store!.getUserByEmail(body.email)
+    if (!user) return c.json({ error: 'User not found' }, 404)
+    await _store!.shareProject({
+      userId: user.id,
+      projectId: pid,
+      role: body.role || 'viewer',
+      createdAt: Date.now()
+    })
+    return c.json({ success: true })
+  })
+
+  app.get('/api/admin/projects/:id/users', async (c) => {
+    const pid = c.req.param('id')
+    if (c.get('projectId') !== 'master' && c.get('projectId') !== pid) return c.json({ error: 'Admin only' }, 403)
+    return c.json(await _store!.getUserProjects(pid))
   })
 
   app.get('/api/admin/keys', async (c) => {

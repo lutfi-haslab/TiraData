@@ -103,6 +103,23 @@ export const apiKeys = pgTable('api_keys', {
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
 })
 
+export const users = pgTable('users', {
+  id:           varchar('id', { length: 128 }).primaryKey(),
+  email:        varchar('email', { length: 256 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 256 }).notNull(),
+  createdAt:    bigint('created_at', { mode: 'number' }).notNull(),
+})
+
+export const userProjects = pgTable('user_projects', {
+  userId:    varchar('user_id', { length: 128 }).notNull(),
+  projectId: varchar('project_id', { length: 128 }).notNull(),
+  role:      varchar('role', { length: 32 }).notNull(),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+}, (t) => [
+  index('idx_up_user').on(t.userId),
+  index('idx_up_project').on(t.projectId),
+])
+
 export type PgSchema = {
   logs: typeof logs
   metrics: typeof metrics
@@ -111,6 +128,8 @@ export type PgSchema = {
   alertHistory: typeof alertHistory
   projects: typeof projects
   apiKeys: typeof apiKeys
+  users: typeof users
+  userProjects: typeof userProjects
 }
 
 export const schema: PgSchema = { 
@@ -120,5 +139,7 @@ export const schema: PgSchema = {
   alertRules, 
   alertHistory,
   projects,
-  apiKeys
+  apiKeys,
+  users,
+  userProjects
 }

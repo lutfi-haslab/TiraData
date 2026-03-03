@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { drizzle, type BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite'
 import {
-  and, asc, count, countDistinct, desc, eq, gte, lte, sql,
+  and, asc, count, countDistinct, desc, eq, gte, lte, sql, inArray
 } from 'drizzle-orm'
 
 import { logs, metrics, traces, schema } from '../db/schema.sqlite'
@@ -82,6 +82,20 @@ const DDL = /* sql */`
     project_id TEXT    NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_alert_hist_rule ON alert_history (rule_id, timestamp DESC);
+  CREATE TABLE IF NOT EXISTS users (
+    id            TEXT    PRIMARY KEY,
+    email         TEXT    NOT NULL UNIQUE,
+    password_hash TEXT    NOT NULL,
+    created_at    INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS user_projects (
+    user_id     TEXT    NOT NULL,
+    project_id  TEXT    NOT NULL,
+    role        TEXT    NOT NULL,
+    created_at  INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_up_user ON user_projects (user_id);
+  CREATE INDEX IF NOT EXISTS idx_up_proj ON user_projects (project_id);
 `
 
 // ─── SQLite Store (Drizzle) ───────────────────────────────────────────────────
@@ -288,10 +302,16 @@ export class SqliteStore implements IStore {
     if (!cleanSql.startsWith('SELECT') && !cleanSql.startsWith('WITH')) {
       throw new Error('Only SELECT / CTE queries are allowed')
     }
-    // Automatically inject project filter? Or trust the user to include it if they write raw SQL?
-    // For safety, we should probably append a WHERE project_id = ... but that's hard to parse reliably.
-    // Instead, we will rely on the query editor UI providing the project context.
-    const rows = this.client.prepare(sqlStr).all() as Record<string, unknown>[]
+    
+    let safeSql = sqlStr
+    if (projectId !== 'master') {
+      if (/\b(users|projects|api_keys)\b/i.test(safeSql)) {
+        throw new Error('Unauthorized table access')
+      }
+      safeSql = safeSql.replace(/\b(logs|metrics|traces)\b/gi, `(SELECT * FROM $1 WHERE project_id = '${projectId.replace(/'/g, "''")}')`)
+    }
+
+    const rows = this.client.prepare(safeSql).all() as Record<string, unknown>[]
     const durationMs = performance.now() - t0
     if (rows.length === 0) return { columns: [], rows: [], rowCount: 0, durationMs }
     const columns = Object.keys(rows[0])
@@ -426,8 +446,23 @@ export class SqliteStore implements IStore {
 
   // ── Project Management ──────────────────────────────────────────────────────
 
-  async getProjects(): Promise<import('../../domain/types').Project[]> {
-    return this.db.select().from(schema.projects).all()
+  async getProjects(userId?: string): Promise<import('../../domain/types').Project[]> {
+    if (!userId) {
+      return this.db.select().from(schema.projects).all()
+    }
+    const userProjs = this.db.select().from(schema.userProjects).where(eq(schema.userProjects.userId, userId)).all()
+    if (userProjs.length === 0) return []
+    const projectIds = userProjs.map(p => p.projectId)
+    return this.db.select().from(schema.projects).where(inArray(schema.projects.id, projectIds)).all()
+  }
+
+  async shareProject(userProject: import('../../domain/types').UserProject): Promise<void> {
+    this.db.insert(schema.userProjects).values(userProject).onConflictDoNothing().run()
+  }
+
+  async getUserProjects(projectId: string): Promise<import('../../domain/types').UserProject[]> {
+    const rows = this.db.select().from(schema.userProjects).where(eq(schema.userProjects.projectId, projectId)).all()
+    return rows.map(r => ({ ...r, role: r.role as 'admin' | 'viewer' }))
   }
 
   async saveProject(project: import('../../domain/types').Project): Promise<void> {
@@ -455,6 +490,39 @@ export class SqliteStore implements IStore {
     return {
       ...row,
       role: row.role as 'admin' | 'ingest'
+    }
+  }
+
+  // ── User Management ───────────────────────────────────────────────────────
+
+  async saveUser(user: import('../../domain/types').User): Promise<void> {
+    this.db.insert(schema.users).values({
+      id: user.id,
+      email: user.email,
+      passwordHash: user.passwordHash,
+      createdAt: user.createdAt,
+    }).onConflictDoNothing().run()
+  }
+
+  async getUserByEmail(email: string): Promise<import('../../domain/types').User | null> {
+    const [row] = this.db.select().from(schema.users).where(eq(schema.users.email, email)).all()
+    if (!row) return null
+    return {
+      id: row.id,
+      email: row.email,
+      passwordHash: row.passwordHash,
+      createdAt: row.createdAt,
+    }
+  }
+
+  async getUserById(id: string): Promise<import('../../domain/types').User | null> {
+    const [row] = this.db.select().from(schema.users).where(eq(schema.users.id, id)).all()
+    if (!row) return null
+    return {
+      id: row.id,
+      email: row.email,
+      passwordHash: row.passwordHash,
+      createdAt: row.createdAt,
     }
   }
 }

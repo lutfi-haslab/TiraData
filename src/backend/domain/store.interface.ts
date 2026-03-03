@@ -93,9 +93,16 @@ export interface IStore {
   getServiceMap(projectId: string, from?: number, to?: number): Promise<{ source: string, target: string, count: number }[]>
 
   // ── Project Management ──────────────────────────────────────────────────────
-  getProjects(): Promise<import('./types').Project[]>
+  getProjects(userId?: string): Promise<import('./types').Project[]>
   saveProject(project: import('./types').Project): Promise<void>
   getApiKeys(projectId: string): Promise<import('./types').ApiKey[]>
   saveApiKey(key: import('./types').ApiKey): Promise<void>
   getApiKey(key: string): Promise<import('./types').ApiKey | null>
+
+  // ── User Management ───────────────────────────────────────────────────────
+  saveUser(user: import('./types').User): Promise<void>
+  getUserByEmail(email: string): Promise<import('./types').User | null>
+  getUserById(id: string): Promise<import('./types').User | null>
+  shareProject(userProject: import('./types').UserProject): Promise<void>
+  getUserProjects(projectId: string): Promise<import('./types').UserProject[]>
 }

@@ -120,7 +120,6 @@ function SqlEditor() {
                 scrollBeyondLastLine: false,
                 wordWrap: 'on',
                 padding: { top: 8 },
-                background: '#12141c',
                 fontFamily: 'JetBrains Mono, Fira Code, monospace',
                 automaticLayout: true,
               }}

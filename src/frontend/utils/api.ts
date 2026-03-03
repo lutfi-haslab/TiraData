@@ -57,6 +57,13 @@ export interface Project {
   createdAt: number
 }
 
+export interface UserProject {
+  userId: string
+  projectId: string
+  role: 'admin' | 'viewer'
+  createdAt: number
+}
+
 export interface ApiKey {
   key: string
   projectId: string
@@ -70,13 +77,22 @@ export interface ApiKey {
 async function apiFetch<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const apiKey = localStorage.getItem('tira_api_key') || ''
   const projectId = localStorage.getItem('tira_project_id') || ''
+  const jwt = localStorage.getItem('tira_jwt') || ''
 
   const headers = new Headers(init?.headers)
   if (apiKey) headers.set('X-API-Key', apiKey)
   if (projectId) headers.set('X-Project-Id', projectId)
+  if (jwt) headers.set('Authorization', `Bearer ${jwt}`)
 
   const res = await fetch(input, { ...init, headers })
   if (!res.ok) {
+    if (res.status === 401 && !input.toString().includes('/api/auth/')) {
+      // Clear token and redirect to login if not already on auth page
+      localStorage.removeItem('tira_jwt')
+      if (window.location.pathname !== '/login' && window.location.pathname !== '/signup') {
+        window.location.href = '/login'
+      }
+    }
     const text = await res.text().catch(() => res.statusText)
     throw new Error(`[${res.status}] ${text}`)
   }
@@ -171,6 +187,16 @@ export const api = {
       body: JSON.stringify({ name, id }),
     }),
 
+  getProjectUsers: (projectId: string) =>
+    apiFetch<UserProject[]>(`/api/admin/projects/${projectId}/users`),
+
+  shareProject: (projectId: string, email: string, role: 'admin' | 'viewer') =>
+    apiFetch<{ success: boolean }>(`/api/admin/projects/${projectId}/share`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, role }),
+    }),
+
   getKeys: () =>
     apiFetch<ApiKey[]>('/api/admin/keys'),
 
@@ -180,4 +206,22 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, role }),
     }),
+
+  // ── Auth ───────────────────────────────────────────────────────────────────
+  login: (email: string, password: string) =>
+    apiFetch<{ success: boolean; token: string; user: { id: string; email: string } }>('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    }),
+
+  signup: (email: string, password: string) =>
+    apiFetch<{ success: boolean; token: string; user: { id: string; email: string } }>('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    }),
+
+  getMe: () =>
+    apiFetch<{ user: { id: string; email: string }; token: string | null }>('/api/auth/me'),
 }

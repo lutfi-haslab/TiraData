@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../utils/api'
-import { Shield, Plus, Key, Box, Trash2, Check, Copy, MoreVertical } from 'lucide-react'
+import { Shield, Plus, Key, Box, Trash2, Copy } from 'lucide-react'
 
 export const Route = createFileRoute('/settings')({
   component: SettingsPage

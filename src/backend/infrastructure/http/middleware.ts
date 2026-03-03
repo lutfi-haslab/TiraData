@@ -1,4 +1,5 @@
 import type { Context, Next } from 'hono'
+import { verify } from 'hono/jwt'
 import type { IStore } from '../../domain/store.interface'
 
 /**
@@ -8,14 +9,35 @@ import type { IStore } from '../../domain/store.interface'
  * 1. If MASTER_KEY is set, it allows full access to all projects.
  * 2. Project-specific API Keys only allow access to their assigned project.
  * 3. ADMIN routes require either the MASTER_KEY or a Project ADMIN key.
+ * 4. User JWT tokens act as a global admin (for simplicity).
  */
 export const createAuthMiddleware = (store: IStore) => {
   return async (c: Context, next: Next) => {
+    const path = c.req.path
+    if (path === '/api/auth/login' || path === '/api/auth/signup' || path.startsWith('/api/docs') || path.startsWith('/api/openapi')) {
+      return next()
+    }
+
+    const authHeader = c.req.header('Authorization')
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7)
+      try {
+        const payload = await verify(token, Bun.env.JWT_SECRET || 'super-secret-tira-key', 'HS256')
+        if (payload.userId) {
+           c.set('userId', payload.userId)
+           c.set('projectId', 'master') // Users currently get master access
+           c.set('role', 'admin')
+           return next()
+        }
+      } catch (err) {
+        // Fall back to checking API Key
+      }
+    }
+
     const masterKey = Bun.env.MASTER_KEY
     const providedKey = c.req.header('X-API-Key') || c.req.query('key')
 
     // If no master key is set and we're in early dev, maybe allow all?
-    // But for Phase 5, we should expect a key if at least one project exists.
     if (!providedKey && !masterKey) {
       // Fallback for Phase 1/2 if no security configured
       return next()
@@ -41,15 +63,12 @@ export const createAuthMiddleware = (store: IStore) => {
     // Inject into context
     c.set('projectId', apiKey.projectId)
     c.set('role', apiKey.role)
-
-    const path = c.req.path
     
     // Authorization Logic
     if (path.startsWith('/api/admin') && apiKey.role !== 'admin') {
       return c.json({ error: 'Forbidden: Admin role required' }, 403)
     }
 
-    // Query routes also require 'admin' role, ingest-only keys should not query
     const isQueryRoute = path.startsWith('/api/logs') || 
                          path.startsWith('/api/metrics') || 
                          path.startsWith('/api/traces') ||

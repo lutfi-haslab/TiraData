@@ -1,5 +1,5 @@
 import { Link, useRouterState } from '@tanstack/react-router'
-import { LayoutDashboard, ScrollText, BarChart2, GitFork, TerminalSquare, Zap, Sun, Moon, Settings } from 'lucide-react'
+import { LayoutDashboard, ScrollText, BarChart2, GitFork, TerminalSquare, Zap, Sun, Moon, Settings, BookOpen, Users } from 'lucide-react'
 import { ProjectSelector } from './ProjectSelector'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../utils/api'
@@ -11,7 +11,9 @@ const NAV = [
   { to: '/metrics', label: 'Metrics',      Icon: BarChart2 },
   { to: '/traces',  label: 'Trace Viewer', Icon: GitFork },
   { to: '/query',   label: 'SQL Editor',   Icon: TerminalSquare },
+  { to: '/api-docs',label: 'API Docs',     Icon: BookOpen },
   { to: '/settings', label: 'Settings',      Icon: Settings },
+  { to: '/profile', label: 'Profile',        Icon: Users },
 ]
 
 export function Sidebar() {

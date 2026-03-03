@@ -99,6 +99,23 @@ export const apiKeys = sqliteTable('api_keys', {
   createdAt: integer('created_at').notNull(),
 })
 
+export const users = sqliteTable('users', {
+  id:           text('id').primaryKey(),
+  email:        text('email').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  createdAt:    integer('created_at').notNull(),
+})
+
+export const userProjects = sqliteTable('user_projects', {
+  userId:    text('user_id').notNull(),
+  projectId: text('project_id').notNull(),
+  role:      text('role').notNull(), // 'admin' | 'viewer'
+  createdAt: integer('created_at').notNull(),
+}, (t) => [
+  index('idx_up_user').on(t.userId),
+  index('idx_up_project').on(t.projectId),
+])
+
 export type SqliteSchema = {
   logs: typeof logs
   metrics: typeof metrics
@@ -107,6 +124,8 @@ export type SqliteSchema = {
   alertHistory: typeof alertHistory
   projects: typeof projects
   apiKeys: typeof apiKeys
+  users: typeof users
+  userProjects: typeof userProjects
 }
 
 export const schema: SqliteSchema = { 
@@ -116,5 +135,7 @@ export const schema: SqliteSchema = {
   alertRules, 
   alertHistory,
   projects,
-  apiKeys
+  apiKeys,
+  users,
+  userProjects
 }
