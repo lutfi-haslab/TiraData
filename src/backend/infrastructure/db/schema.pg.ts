@@ -6,6 +6,7 @@ import {
   text,
   jsonb,
   index,
+  boolean,
 } from 'drizzle-orm/pg-core'
 
 // ─── Tables ───────────────────────────────────────────────────────────────────
@@ -61,10 +62,37 @@ export const traces = pgTable(
   ]
 )
 
+export const alertRules = pgTable('alert_rules', {
+  id:         varchar('id', { length: 128 }).primaryKey(),
+  name:       varchar('name', { length: 256 }).notNull(),
+  query:      text('query').notNull(),
+  threshold:  doublePrecision('threshold').notNull(),
+  condition:  varchar('condition', { length: 8 }).notNull(), // 'gt' | 'lt'
+  intervalMs: bigint('interval_ms', { mode: 'number' }).notNull(),
+  enabled:    boolean('enabled').notNull().default(true),
+  lastChecked: bigint('last_checked', { mode: 'number' }),
+})
+
+export const alertHistory = pgTable('alert_history', {
+  id:        varchar('id', { length: 128 }).primaryKey(),
+  ruleId:    varchar('rule_id', { length: 128 }).notNull(),
+  timestamp: bigint('timestamp', { mode: 'number' }).notNull(),
+  value:     doublePrecision('value').notNull(),
+  triggered: boolean('triggered').notNull(),
+})
+
 export type PgSchema = {
   logs: typeof logs
   metrics: typeof metrics
   traces: typeof traces
+  alertRules: typeof alertRules
+  alertHistory: typeof alertHistory
 }
 
-export const schema: PgSchema = { logs, metrics, traces }
+export const schema: PgSchema = { 
+  logs, 
+  metrics, 
+  traces, 
+  alertRules, 
+  alertHistory 
+}

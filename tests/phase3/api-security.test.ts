@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'bun:test'
 import { createServer } from '../../src/backend/infrastructure/http/server'
 
-let app: Awaited<ReturnType<typeof createServer>>
+let app: any
 const MASTER_KEY = 'test_master'
 const INGEST_KEY = 'test_ingest'
 
@@ -10,7 +10,8 @@ beforeAll(async () => {
   process.env.DB_PATH = ':memory:'
   process.env.MASTER_KEY = MASTER_KEY
   process.env.INGEST_KEY = INGEST_KEY
-  app = await createServer()
+  const res = await createServer()
+  app = res.app
 })
 
 const fetchApi = (path: string, method = 'GET', body?: unknown, key?: string) =>

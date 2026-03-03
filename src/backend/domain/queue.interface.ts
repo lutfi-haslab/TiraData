@@ -8,4 +8,6 @@ export interface IIngestionQueue {
   capacity: number
   dropped: number
   stop(): void
+  /** Subscribe to new logs in real-time (for tailing) */
+  onLog(cb: (log: LogEntry) => void): () => void
 }

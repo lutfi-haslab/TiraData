@@ -269,3 +269,4 @@ CREATE TABLE traces (
 - [x] **Phase 3** — gRPC ingestion, OpenTelemetry native receiver (OTLP/HTTP)
 - [x] **Phase 3** — Query result caching, automated background TTL cleanup job
 - [x] **Phase 3** — API key authentication, RBAC
+- [x] **Phase 4** — Real-time Log Tailing (WebSockets), Alerting Engine, Service Map

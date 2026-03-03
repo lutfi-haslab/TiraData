@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
+import { createBunWebSocket } from 'hono/bun'
 import { IngestionQueue } from '../queue/ingestion-queue'
 import { WALQueue } from '../queue/wal-queue'
 import { createStore } from '../store-factory'
@@ -14,6 +15,7 @@ import type {
   IngestLogPayload,
   IngestMetricPayload,
   IngestTracePayload,
+  AlertRule,
 } from '../../domain/types'
 
 // ─── Async Server Factory ─────────────────────────────────────────────────────
@@ -21,6 +23,8 @@ import type {
 
 let _queue: IIngestionQueue | null = null
 let _store: IStore | null = null
+
+const { upgradeWebSocket, websocket } = createBunWebSocket()
 
 export const createServer = async () => {
   _store = await createStore()
@@ -47,6 +51,36 @@ export const createServer = async () => {
   app.use('*', cors({ origin: '*' }))
   app.use('/api/*', authMiddleware)
   app.use('/v1/*', authMiddleware) // OTLP routes
+
+  // ── Live Tail (WebSocket) ──────────────────────────────────────────────────
+  app.get('/ws/tail', upgradeWebSocket((c) => {
+    const key = c.req.query('key')
+    const master = Bun.env.MASTER_KEY
+    if (master && key !== master) return {} // Hono WS handles this as closing
+    
+    // Filter params
+    const fSvc   = c.req.query('service')
+    const fLevel = c.req.query('level')
+
+    let unsubscribe: (() => void) | null = null
+
+    return {
+      onOpen(_event, ws) {
+        console.log('[WS] Tail connected')
+        unsubscribe = _queue!.onLog((log) => {
+          // Server-side filter
+          if (fSvc && log.service !== fSvc) return
+          if (fLevel && log.level !== fLevel) return
+          
+          ws.send(JSON.stringify(log))
+        })
+      },
+      onClose() {
+        console.log('[WS] Tail disconnected')
+        unsubscribe?.()
+      }
+    }
+  }))
 
   // ── Health ─────────────────────────────────────────────────────────────────
   app.get('/api/health', (c) =>
@@ -252,7 +286,50 @@ export const createServer = async () => {
     return c.json({ success: true, deleted: result, retention: { logsDays, metricsDays, tracesDays } })
   })
 
-  return app
+  // ── Alerts ─────────────────────────────────────────────────────────────────
+  app.get('/api/alerts/rules', async (c) => {
+    const rules = await _store!.getAlertRules()
+    return c.json(rules)
+  })
+
+  app.post('/api/alerts/rules', async (c) => {
+    const body = await c.req.json()
+    const rule: AlertRule = {
+      id: body.id || crypto.randomUUID(),
+      name: body.name,
+      query: body.query,
+      threshold: Number(body.threshold),
+      condition: body.condition || 'gt',
+      intervalMs: Number(body.intervalMs) || 60000,
+      enabled: body.enabled !== false,
+      lastChecked: body.lastChecked
+    }
+    await _store!.saveAlertRule(rule)
+    return c.json({ success: true, rule })
+  })
+
+  app.delete('/api/alerts/rules/:id', async (c) => {
+    const id = c.req.param('id')
+    await _store!.deleteAlertRule(id)
+    return c.json({ success: true })
+  })
+
+  app.get('/api/alerts/history', async (c) => {
+    const ruleId = c.req.query('rule_id')
+    const limit  = Number(c.req.query('limit')) || 100
+    const history = await _store!.getAlertHistory(ruleId, limit)
+    return c.json(history)
+  })
+
+  // ── Visualization ──────────────────────────────────────────────────────────
+  app.get('/api/query/service-map', async (c) => {
+    const from = Number(c.req.query('from')) || undefined
+    const to   = Number(c.req.query('to')) || undefined
+    const edges = await _store!.getServiceMap(from, to)
+    return c.json(edges)
+  })
+
+  return { app, websocket }
 }
 
 // ─── Accessors for graceful shutdown ─────────────────────────────────────────

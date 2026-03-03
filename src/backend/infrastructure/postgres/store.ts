@@ -5,7 +5,7 @@ import { and, asc, count, countDistinct, desc, eq, gte, lte, sql } from 'drizzle
 import { logs, metrics, traces, schema } from '../db/schema.pg'
 import type { PgSchema } from '../db/schema.pg'
 import type { IStore, LogQueryParams, MetricQueryParams, TraceQueryParams, TtlDeleteResult } from '../../domain/store.interface'
-import type { LogEntry, MetricEntry, SqlQueryResult, SystemStats, TraceEntry } from '../../domain/types'
+import type { LogEntry, MetricEntry, SqlQueryResult, SystemStats, TraceEntry, AlertRule, AlertHistoryEntry } from '../../domain/types'
 
 // ─── Startup Timestamp ────────────────────────────────────────────────────────
 
@@ -49,6 +49,26 @@ const DDL = /* sql */`
   CREATE INDEX IF NOT EXISTS idx_metrics_lbl  ON metrics USING GIN (labels);
   CREATE INDEX IF NOT EXISTS idx_traces_ts    ON traces  (start_time DESC);
   CREATE INDEX IF NOT EXISTS idx_traces_id    ON traces  (trace_id);
+
+  CREATE TABLE IF NOT EXISTS alert_rules (
+    id          VARCHAR(128) PRIMARY KEY,
+    name        VARCHAR(256) NOT NULL,
+    query       TEXT         NOT NULL,
+    threshold   DOUBLE PRECISION NOT NULL,
+    condition   VARCHAR(8)   NOT NULL,
+    interval_ms BIGINT       NOT NULL,
+    enabled     BOOLEAN      NOT NULL DEFAULT TRUE,
+    last_checked BIGINT
+  );
+
+  CREATE TABLE IF NOT EXISTS alert_history (
+    id        VARCHAR(128) PRIMARY KEY,
+    rule_id   VARCHAR(128) NOT NULL,
+    timestamp BIGINT       NOT NULL,
+    value     DOUBLE PRECISION NOT NULL,
+    triggered BOOLEAN      NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_alert_hist_rule ON alert_history (rule_id, timestamp DESC);
 `
 
 // ─── PostgreSQL Store (Drizzle + pg) ─────────────────────────────────────────
@@ -297,6 +317,68 @@ export class PostgresStore implements IStore {
         : Promise.resolve([]),
     ])
     return { logs: results[0].length, metrics: results[1].length, traces: results[2].length }
+  }
+
+  // ── Alerts ───────────────────────────────────────────────────────────────
+
+  async getAlertRules(): Promise<AlertRule[]> {
+    const rows = await this.db.select().from(schema.alertRules)
+    return rows as AlertRule[]
+  }
+
+  async saveAlertRule(rule: AlertRule): Promise<void> {
+    await this.db.insert(schema.alertRules)
+      .values(rule)
+      .onConflictDoUpdate({
+        target: schema.alertRules.id,
+        set: {
+          name: rule.name,
+          query: rule.query,
+          threshold: rule.threshold,
+          condition: rule.condition,
+          intervalMs: rule.intervalMs,
+          enabled: rule.enabled,
+          lastChecked: rule.lastChecked ?? null
+        }
+      })
+  }
+
+  async deleteAlertRule(id: string): Promise<void> {
+    await this.db.delete(schema.alertRules).where(eq(schema.alertRules.id, id))
+  }
+
+  async saveAlertHistory(entry: AlertHistoryEntry): Promise<void> {
+    await this.db.insert(schema.alertHistory).values(entry)
+  }
+
+  async getAlertHistory(ruleId?: string, limit = 100): Promise<AlertHistoryEntry[]> {
+    let q = this.db.select().from(schema.alertHistory)
+    if (ruleId) {
+      q = q.where(eq(schema.alertHistory.ruleId, ruleId)) as any
+    }
+    return q.orderBy(desc(schema.alertHistory.timestamp)).limit(limit) as any
+  }
+
+  // ── Visualization ──────────────────────────────────────────────────────────
+
+  async getServiceMap(from?: number, to?: number): Promise<{ source: string, target: string, count: number }[]> {
+    const res = await this.pool.query({
+      text: `
+        SELECT 
+          p.attributes->>'service.name' as source,
+          c.attributes->>'service.name' as target,
+          COUNT(*)::int as count
+        FROM traces c
+        JOIN traces p ON c.parent_id = p.span_id
+        WHERE p.attributes->>'service.name' IS NOT NULL 
+          AND c.attributes->>'service.name' IS NOT NULL 
+          AND p.attributes->>'service.name' != c.attributes->>'service.name'
+          ${from ? `AND c.start_time >= ${from}` : ''}
+          ${to ? `AND c.start_time <= ${to}` : ''}
+        GROUP BY 1, 2
+      `
+    })
+    return res.rows
   }
 
   async end(): Promise<void> {

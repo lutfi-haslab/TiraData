@@ -78,3 +78,24 @@ export interface SystemStats {
   queue: { size: number; capacity: number; utilization: number }
   uptime_s: number
 }
+
+// ─── Alerts ───────────────────────────────────────────────────────────────────
+
+export interface AlertRule {
+  id: string
+  name: string
+  query: string
+  threshold: number
+  condition: 'gt' | 'lt'
+  intervalMs: number
+  enabled: boolean
+  lastChecked?: number
+}
+
+export interface AlertHistoryEntry {
+  id: string
+  ruleId: string
+  timestamp: number
+  value: number
+  triggered: boolean
+}

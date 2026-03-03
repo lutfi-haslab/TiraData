@@ -7,7 +7,7 @@ import {
 import { logs, metrics, traces, schema } from '../db/schema.sqlite'
 import type { SqliteSchema } from '../db/schema.sqlite'
 import type { IStore, LogQueryParams, MetricQueryParams, TraceQueryParams, TtlDeleteResult } from '../../domain/store.interface'
-import type { LogEntry, MetricEntry, SqlQueryResult, SystemStats, TraceEntry } from '../../domain/types'
+import type { LogEntry, MetricEntry, SqlQueryResult, SystemStats, TraceEntry, AlertRule, AlertHistoryEntry } from '../../domain/types'
 
 // ─── Startup Timestamp ────────────────────────────────────────────────────────
 
@@ -46,6 +46,24 @@ const DDL = /* sql */`
   CREATE INDEX IF NOT EXISTS idx_metrics_ts   ON metrics (name, timestamp DESC);
   CREATE INDEX IF NOT EXISTS idx_traces_ts    ON traces  (start_time DESC);
   CREATE INDEX IF NOT EXISTS idx_traces_id    ON traces  (trace_id);
+  CREATE TABLE IF NOT EXISTS alert_rules (
+    id          TEXT    PRIMARY KEY,
+    name        TEXT    NOT NULL,
+    query       TEXT    NOT NULL,
+    threshold   REAL    NOT NULL,
+    condition   TEXT    NOT NULL,
+    interval_ms INTEGER NOT NULL,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    last_checked INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS alert_history (
+    id        TEXT    PRIMARY KEY,
+    rule_id   TEXT    NOT NULL,
+    timestamp INTEGER NOT NULL,
+    value     REAL    NOT NULL,
+    triggered INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_alert_hist_rule ON alert_history (rule_id, timestamp DESC);
 `
 
 // ─── SQLite Store (Drizzle) ───────────────────────────────────────────────────
@@ -301,5 +319,75 @@ export class SqliteStore implements IStore {
     })()
 
     return { logs: deletedLogs, metrics: deletedMetrics, traces: deletedTraces }
+  }
+
+  // ── Alerts ───────────────────────────────────────────────────────────────
+
+  async getAlertRules(): Promise<AlertRule[]> {
+    const rows = this.db.select().from(schema.alertRules).all()
+    return rows.map(r => ({
+      ...r,
+      condition: r.condition as 'gt' | 'lt',
+      lastChecked: r.lastChecked ?? undefined
+    }))
+  }
+
+  async saveAlertRule(rule: AlertRule): Promise<void> {
+    this.db.insert(schema.alertRules)
+      .values(rule)
+      .onConflictDoUpdate({
+        target: schema.alertRules.id,
+        set: {
+          name: rule.name,
+          query: rule.query,
+          threshold: rule.threshold,
+          condition: rule.condition,
+          intervalMs: rule.intervalMs,
+          enabled: rule.enabled,
+          lastChecked: rule.lastChecked ?? null
+        }
+      })
+      .run()
+  }
+
+  async deleteAlertRule(id: string): Promise<void> {
+    this.db.delete(schema.alertRules).where(eq(schema.alertRules.id, id)).run()
+  }
+
+  async saveAlertHistory(entry: AlertHistoryEntry): Promise<void> {
+    this.db.insert(schema.alertHistory).values(entry).run()
+  }
+
+  async getAlertHistory(ruleId?: string, limit = 100): Promise<AlertHistoryEntry[]> {
+    let q = this.db.select().from(schema.alertHistory)
+    if (ruleId) {
+      q = q.where(eq(schema.alertHistory.ruleId, ruleId)) as any
+    }
+    return q.orderBy(desc(schema.alertHistory.timestamp)).limit(limit).all()
+  }
+
+  // ── Visualization ──────────────────────────────────────────────────────────
+
+  async getServiceMap(from?: number, to?: number): Promise<{ source: string, target: string, count: number }[]> {
+    // In SQLite, we use json_extract.
+    // We join traces (child) with traces (parent) on parent_id = span_id
+    const sqlStr = `
+      SELECT 
+        json_extract(p.attributes, '$."service.name"') as source,
+        json_extract(c.attributes, '$."service.name"') as target,
+        COUNT(*) as count
+      FROM traces c
+      JOIN traces p ON c.parent_id = p.span_id
+      WHERE source IS NOT NULL AND target IS NOT NULL AND source != target
+      ${from ? `AND c.start_time >= ${from}` : ''}
+      ${to ? `AND c.start_time <= ${to}` : ''}
+      GROUP BY source, target
+    `
+    const rows = this.client.prepare(sqlStr).all() as any[]
+    return rows.map(r => ({
+      source: String(r.source),
+      target: String(r.target),
+      count: Number(r.count)
+    }))
   }
 }

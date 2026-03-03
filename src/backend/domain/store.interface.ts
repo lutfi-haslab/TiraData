@@ -1,4 +1,12 @@
-import type { LogEntry, MetricEntry, TraceEntry, SqlQueryResult, SystemStats } from './types'
+import type { 
+  LogEntry, 
+  MetricEntry, 
+  TraceEntry, 
+  SqlQueryResult, 
+  SystemStats,
+  AlertRule,
+  AlertHistoryEntry
+} from './types'
 
 // ─── Query Param Types ────────────────────────────────────────────────────────
 
@@ -70,4 +78,13 @@ export interface IStore {
     metricsBefore?: number
     tracesBefore?: number
   }): Promise<TtlDeleteResult>
+
+  // ── Alerts ───────────────────────────────────────────────────────────────
+  getAlertRules(): Promise<AlertRule[]>
+  saveAlertRule(rule: AlertRule): Promise<void>
+  deleteAlertRule(id: string): Promise<void>
+  saveAlertHistory(entry: AlertHistoryEntry): Promise<void>
+  getAlertHistory(ruleId?: string, limit?: number): Promise<AlertHistoryEntry[]>
+  // ── Visualization ──────────────────────────────────────────────────────────
+  getServiceMap(from?: number, to?: number): Promise<{ source: string, target: string, count: number }[]>
 }

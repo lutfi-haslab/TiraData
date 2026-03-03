@@ -28,6 +28,8 @@ export class IngestionQueue implements IIngestionQueue {
   private readonly buf: RingBuffer<QueueItem>
   private timer: ReturnType<typeof setInterval> | null = null
 
+  private subscribers = new Set<(log: LogEntry) => void>()
+
   constructor(
     capacity = 10_000,
     private readonly flush: FlushFn
@@ -36,8 +38,17 @@ export class IngestionQueue implements IIngestionQueue {
     this.start()
   }
 
+  onLog(cb: (log: LogEntry) => void): () => void {
+    this.subscribers.add(cb)
+    return () => this.subscribers.delete(cb)
+  }
+
   enqueueLog(entry: LogEntry): boolean {
-    return this.buf.enqueue({ kind: 'log', data: entry })
+    const ok = this.buf.enqueue({ kind: 'log', data: entry })
+    if (ok) {
+      for (const cb of this.subscribers) cb(entry)
+    }
+    return ok
   }
 
   enqueueMetric(entry: MetricEntry): boolean {

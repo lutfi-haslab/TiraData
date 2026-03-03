@@ -58,10 +58,37 @@ export const traces = sqliteTable(
   ]
 )
 
+export const alertRules = sqliteTable('alert_rules', {
+  id:         text('id').primaryKey(),
+  name:       text('name').notNull(),
+  query:      text('query').notNull(), // SQL query returning a single numeric value
+  threshold:  real('threshold').notNull(),
+  condition:  text('condition').notNull(), // 'gt' | 'lt'
+  intervalMs: integer('interval_ms').notNull(),
+  enabled:    integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  lastChecked: integer('last_checked'),
+})
+
+export const alertHistory = sqliteTable('alert_history', {
+  id:        text('id').primaryKey(),
+  ruleId:    text('rule_id').notNull(),
+  timestamp: integer('timestamp').notNull(),
+  value:     real('value').notNull(),
+  triggered: integer('triggered', { mode: 'boolean' }).notNull(),
+})
+
 export type SqliteSchema = {
   logs: typeof logs
   metrics: typeof metrics
   traces: typeof traces
+  alertRules: typeof alertRules
+  alertHistory: typeof alertHistory
 }
 
-export const schema: SqliteSchema = { logs, metrics, traces }
+export const schema: SqliteSchema = { 
+  logs, 
+  metrics, 
+  traces, 
+  alertRules, 
+  alertHistory 
+}

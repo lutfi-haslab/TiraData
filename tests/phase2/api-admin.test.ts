@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'bun:test'
 import { createServer } from '../../src/backend/infrastructure/http/server'
 
-let app: Awaited<ReturnType<typeof createServer>>
+let app: any
 
 beforeAll(async () => {
   process.env.STORE   = 'sqlite'
@@ -9,7 +9,8 @@ beforeAll(async () => {
   // Run high-level tests without auth requirement
   delete process.env.MASTER_KEY
   delete process.env.INGEST_KEY
-  app = await createServer()
+  const { app: _app } = await createServer()
+  app = _app
 })
 
 const post = (path: string, body?: unknown) =>

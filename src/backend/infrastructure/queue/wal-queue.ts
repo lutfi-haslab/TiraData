@@ -27,6 +27,7 @@ export class WALQueue implements IIngestionQueue {
   private isFlushing = false
   private _dropped = 0
   private _capacity: number
+  private subscribers = new Set<(log: LogEntry) => void>()
 
   constructor(
     capacity = 100_000,
@@ -39,6 +40,11 @@ export class WALQueue implements IIngestionQueue {
 
     this.init()
     this.start()
+  }
+
+  onLog(cb: (log: LogEntry) => void): () => void {
+    this.subscribers.add(cb)
+    return () => this.subscribers.delete(cb)
   }
 
   private init() {
@@ -88,7 +94,11 @@ export class WALQueue implements IIngestionQueue {
   }
 
   enqueueLog(entry: LogEntry): boolean {
-    return this.append({ kind: 'log', data: entry })
+    const ok = this.append({ kind: 'log', data: entry })
+    if (ok) {
+      for (const cb of this.subscribers) cb(entry)
+    }
+    return ok
   }
 
   enqueueMetric(entry: MetricEntry): boolean {

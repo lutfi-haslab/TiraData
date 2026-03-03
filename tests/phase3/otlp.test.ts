@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeAll } from 'bun:test'
 import { createServer } from '../../src/backend/infrastructure/http/server'
 
-let app: Awaited<ReturnType<typeof createServer>>
+let app: any
 const KEY = 'test_master'
 
 beforeAll(async () => {
   process.env.STORE   = 'sqlite'
   process.env.DB_PATH = ':memory:'
   process.env.MASTER_KEY = KEY
-  app = await createServer()
+  const res = await createServer()
+  app = res.app
 })
 
 const fetchApi = (path: string, method = 'GET', body?: unknown) =>

@@ -5,7 +5,7 @@ import type { Hono } from 'hono'
 // ─── Setup ────────────────────────────────────────────────────────────────────
 // We test the Hono app directly via app.fetch() — no real TCP socket needed.
 
-let app: Awaited<ReturnType<typeof createServer>>
+let app: any
 
 beforeAll(async () => {
   // Override DB_PATH so tests use a temp in-memory DB
@@ -14,7 +14,8 @@ beforeAll(async () => {
   // Ensure we run in open mode for these tests
   delete process.env.MASTER_KEY
   delete process.env.INGEST_KEY
-  app = await createServer()
+  const { app: _app } = await createServer()
+  app = _app
 })
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
