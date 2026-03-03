@@ -6,7 +6,7 @@ type QueueItem =
   | { kind: 'metric'; data: MetricEntry }
   | { kind: 'trace';  data: TraceEntry }
 
-type FlushFn = (logs: LogEntry[], metrics: MetricEntry[], traces: TraceEntry[]) => void
+type FlushFn = (logs: LogEntry[], metrics: MetricEntry[], traces: TraceEntry[]) => Promise<void>
 
 const BATCH_SIZE   = 500
 const FLUSH_INTERVAL_MS = 250

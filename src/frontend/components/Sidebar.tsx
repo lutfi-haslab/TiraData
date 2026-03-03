@@ -1,75 +1,77 @@
 import { Link, useRouterState } from '@tanstack/react-router'
-import {
-  LayoutDashboard,
-  ScrollText,
-  BarChart2,
-  GitFork,
-  TerminalSquare,
-  Zap,
-} from 'lucide-react'
+import { LayoutDashboard, ScrollText, BarChart2, GitFork, TerminalSquare, Zap, Sun, Moon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../utils/api'
+import { useTheme } from '../context/ThemeContext'
 
 const NAV = [
-  { to: '/',        label: 'Dashboard',     Icon: LayoutDashboard },
-  { to: '/logs',    label: 'Log Explorer',  Icon: ScrollText },
-  { to: '/metrics', label: 'Metrics',       Icon: BarChart2 },
-  { to: '/traces',  label: 'Trace Viewer',  Icon: GitFork },
-  { to: '/query',   label: 'SQL Editor',    Icon: TerminalSquare },
+  { to: '/',        label: 'Dashboard',    Icon: LayoutDashboard },
+  { to: '/logs',    label: 'Log Explorer', Icon: ScrollText },
+  { to: '/metrics', label: 'Metrics',      Icon: BarChart2 },
+  { to: '/traces',  label: 'Trace Viewer', Icon: GitFork },
+  { to: '/query',   label: 'SQL Editor',   Icon: TerminalSquare },
 ]
 
 export function Sidebar() {
-  const state    = useRouterState()
-  const pathname = state.location.pathname
+  const pathname = useRouterState({ select: s => s.location.pathname })
+  const { theme, toggleTheme } = useTheme()
 
-  // Health pulse every 10 s
   const { data: health } = useQuery({
     queryKey: ['health'],
     queryFn: api.health,
     refetchInterval: 10_000,
     retry: false,
   })
-
   const online = health?.status === 'ok'
 
   return (
-    <aside className="sidebar">
+    <aside className="w-56 shrink-0 flex flex-col bg-slate-100 border-r border-slate-200 dark:bg-[#0f1117] dark:border-white/[0.07] h-screen transition-colors duration-200">
       {/* Logo */}
-      <div className="sidebar-logo">
-        <div className="sidebar-logo-icon">
-          <Zap size={16} color="#fff" strokeWidth={2.5} />
+      <div className="flex items-center gap-2.5 px-4 py-5 border-b border-slate-200 dark:border-white/[0.06]">
+        <div className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center shrink-0">
+          <Zap size={14} color="#fff" strokeWidth={2.5} />
         </div>
-        <span className="sidebar-logo-text">tiradata</span>
+        <span className="text-sm font-semibold tracking-wide text-slate-800 dark:text-slate-100">tiradata</span>
       </div>
 
-      {/* Navigation */}
-      <div className="sidebar-section">
-        <div className="sidebar-label">Navigation</div>
+      {/* Nav */}
+      <nav className="flex-1 px-2 py-3 flex flex-col gap-0.5">
+        <p className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-600 px-2 py-1 mb-1">Navigation</p>
+        {NAV.map(({ to, label, Icon }) => {
+          const active = pathname === to
+          return (
+            <Link
+              key={to}
+              to={to}
+              className={[
+                'flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-all duration-200',
+                active
+                  ? 'bg-indigo-500/10 text-indigo-600 font-semibold dark:bg-indigo-500/20 dark:text-indigo-300 dark:font-medium'
+                  : 'text-slate-600 hover:bg-slate-200 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/[0.05] dark:hover:text-slate-200',
+              ].join(' ')}
+            >
+              <Icon size={15} strokeWidth={1.8} />
+              {label}
+            </Link>
+          )
+        })}
+      </nav>
 
-        {NAV.map(({ to, label, Icon }) => (
-          <Link
-            key={to}
-            to={to}
-            className={`nav-item ${pathname === to ? 'active' : ''}`}
-          >
-            <Icon size={15} strokeWidth={1.8} />
-            {label}
-          </Link>
-        ))}
-      </div>
+      {/* Footer Actions */}
+      <div className="px-3 pb-4 flex flex-col gap-2">
+        {/* Theme Toggle */}
+        <button
+          onClick={toggleTheme}
+          className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] text-slate-600 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-white/[0.05] transition-all duration-200"
+        >
+          {theme === 'light' ? <Moon size={14} strokeWidth={2} /> : <Sun size={14} strokeWidth={2} />}
+          <span>{theme === 'light' ? 'Switch to Dark' : 'Switch to Light'}</span>
+        </button>
 
-      {/* Footer: backend status */}
-      <div className="sidebar-footer">
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '8px 10px',
-          borderRadius: 'var(--radius-sm)',
-          background: 'var(--color-bg-elevated)',
-        }}>
-          <div className={`status-dot ${online ? 'status-dot-green' : 'status-dot-red'}`} />
-          <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+        {/* Backend status */}
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-white/50 border border-slate-200 dark:bg-white/[0.04] dark:border-white/[0.06]">
+          <div className={`w-2 h-2 rounded-full shrink-0 ${online ? 'bg-emerald-500 dark:bg-emerald-400' : 'bg-red-500 dark:bg-red-400'}`} />
+          <span className="text-[12px] text-slate-500 dark:text-slate-400">
             {online ? 'Backend online' : 'Backend offline'}
           </span>
         </div>

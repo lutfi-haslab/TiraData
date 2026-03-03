@@ -1,13 +1,15 @@
-import { createServer, queue } from './infrastructure/http/server'
+import { createServer, getQueue } from './infrastructure/http/server'
 
 const port = Number(Bun.env.PORT ?? 3000)
-const app  = createServer()
+
+// createServer is async (awaits store initialisation)
+const app = await createServer()
 
 // ─── Graceful Shutdown ────────────────────────────────────────────────────────
 
 const shutdown = (signal: string) => {
   console.log(`\n[${signal}] Shutting down – draining queue...`)
-  queue.stop()
+  getQueue()?.stop()
   console.log('Goodbye.')
 }
 

@@ -88,7 +88,7 @@ export const api = {
     )
   },
 
-  metrics: (params: { name?: string; from?: number; to?: number; limit?: number } = {}) => {
+  metrics: (params: { name?: string; from?: number; to?: number; limit?: number; offset?: number } = {}) => {
     const qs = new URLSearchParams()
     for (const [k, v] of Object.entries(params)) {
       if (v != null) qs.set(k, String(v))
@@ -101,7 +101,7 @@ export const api = {
   metricNames: () =>
     apiFetch<{ data: string[] }>('/api/metrics/names'),
 
-  traces: (params: { trace_id?: string; from?: number; to?: number; limit?: number } = {}) => {
+  traces: (params: { trace_id?: string; from?: number; to?: number; limit?: number; offset?: number } = {}) => {
     const qs = new URLSearchParams()
     for (const [k, v] of Object.entries(params)) {
       if (v != null) qs.set(k, String(v))

@@ -1,0 +1,215 @@
+hy4-mac-002@HY4-MAC-4 tiradata % bun test:all
+$ bun test tests/
+bun test v1.3.1-canary.22 (db7bcd79)
+
+tests/phase2/api-admin.test.ts:
+[tiradata] storage: SQLite (:memory:)
+<-- GET /api/admin/config
+--> GET /api/admin/config 200 1ms
+✓ GET /api/admin/config > returns 200 with adapter and queue info [1.84ms]
+<-- GET /api/admin/config
+--> GET /api/admin/config 200 0ms
+✓ GET /api/admin/config > reports 0 dropped items on fresh start [0.04ms]
+<-- POST /api/admin/optimize
+--> POST /api/admin/optimize 200 1ms
+✓ POST /api/admin/optimize > returns 200 with success and durationMs [0.77ms]
+<-- POST /api/admin/optimize
+--> POST /api/admin/optimize 200 0ms
+✓ POST /api/admin/optimize > is idempotent — second call also succeeds [0.44ms]
+<-- POST /api/admin/ttl/run
+--> POST /api/admin/ttl/run 200 1ms
+✓ POST /api/admin/ttl/run > returns 200 with deleted counts [0.48ms]
+<-- POST /api/admin/ttl/run
+--> POST /api/admin/ttl/run 200 0ms
+✓ POST /api/admin/ttl/run > returns retention config used [0.24ms]
+<-- POST /api/admin/ttl/run
+--> POST /api/admin/ttl/run 200 0ms
+✓ POST /api/admin/ttl/run > accepts custom retention overrides in body [0.16ms]
+<-- POST /api/ingest/log
+--> POST /api/ingest/log 202 0ms
+<-- POST /api/admin/ttl/run
+--> POST /api/admin/ttl/run 200 1ms
+✓ POST /api/admin/ttl/run > deletes old data and leaves new data intact [353.06ms]
+<-- POST /api/ingest/log
+--> POST /api/ingest/log 202 0ms
+<-- GET /api/logs?service=pipeline-test
+--> GET /api/logs?service=pipeline-test 200 3ms
+<-- GET /api/stats
+--> GET /api/stats 200 1ms
+✓ Phase 2 – full pipeline via HTTP (ingest → TTL → verify) > ingests data, runs TTL, confirms old data removed [356.46ms]
+<-- POST /api/ingest/log
+--> POST /api/ingest/log 202 0ms
+<-- POST /api/admin/optimize
+--> POST /api/admin/optimize 200 3ms
+<-- GET /api/logs?service=vacuum-test
+--> GET /api/logs?service=vacuum-test 200 1ms
+✓ Phase 2 – full pipeline via HTTP (ingest → TTL → verify) > optimize + query on same store does not corrupt data [355.81ms]
+<-- GET /api/admin/config
+--> GET /api/admin/config 200 0ms
+<-- GET /api/admin/config
+--> GET /api/admin/config 200 0ms
+✓ Phase 2 – full pipeline via HTTP (ingest → TTL → verify) > admin config reflects queue state after ingestion [353.12ms]
+
+tests/phase2/sqlite-store.test.ts:
+✓ SqliteStore (Drizzle) – combined filters > combines service + level filters (AND) [3.96ms]
+✓ SqliteStore (Drizzle) – combined filters > combines name + time filters for metrics [4.65ms]
+✓ SqliteStore (Drizzle) – combined filters > combines trace_id + time range filter [4.04ms]
+✓ SqliteStore (Drizzle) – pagination > offset works for logs [3.59ms]
+✓ SqliteStore (Drizzle) – pagination > clamps limit to max 1000 for logs [1.60ms]
+✓ SqliteStore – optimize() > returns durationMs [1.18ms]
+✓ SqliteStore – optimize() > does not corrupt data after VACUUM [1.41ms]
+✓ SqliteStore – optimize() > can be called multiple times safely [1.11ms]
+✓ SqliteStore – deleteBefore() TTL > deletes logs older than cutoff [1.04ms]
+✓ SqliteStore – deleteBefore() TTL > deletes metrics older than cutoff [0.84ms]
+✓ SqliteStore – deleteBefore() TTL > deletes traces older than cutoff [0.88ms]
+✓ SqliteStore – deleteBefore() TTL > handles all three TTL types in one call [0.32ms]
+✓ SqliteStore – deleteBefore() TTL > returns 0 deletes when nothing matches cutoff [0.77ms]
+✓ SqliteStore – deleteBefore() TTL > is idempotent — second delete returns 0 [0.43ms]
+✓ SqliteStore – deleteBefore() TTL > skips undefined params (only deletes what is specified) [0.72ms]
+
+tests/phase1/ring-buffer.test.ts:
+✓ RingBuffer > starts empty [0.52ms]
+✓ RingBuffer > enqueues and dequeues a single item [0.20ms]
+✓ RingBuffer > dequeues items in FIFO order [0.03ms]
+✓ RingBuffer > dequeueMany respects max limit [0.01ms]
+✓ RingBuffer > dequeueMany on empty buffer returns [] [0.02ms]
+✓ RingBuffer > returns false when full [0.02ms]
+✓ RingBuffer > increments droppedCount on overflow [0.02ms]
+✓ RingBuffer > accepts new items after draining [0.02ms]
+✓ RingBuffer > wraps around correctly (head/tail modulo) [0.02ms]
+✓ RingBuffer > handles repeated fill-drain cycles [0.16ms]
+✓ RingBuffer > clears references after dequeue (no memory leaks) [0.05ms]
+
+tests/phase1/normalise.test.ts:
+✓ normaliseLog > generates an id
+✓ normaliseLog > defaults level to info when not provided [0.43ms]
+✓ normaliseLog > defaults level to info for unknown level
+✓ normaliseLog > accepts all valid levels [0.04ms]
+✓ normaliseLog > defaults service to unknown [0.02ms]
+✓ normaliseLog > uses provided service [0.01ms]
+✓ normaliseLog > uses provided timestamp (ms) [0.02ms]
+✓ normaliseLog > converts seconds-epoch timestamp to ms [0.02ms]
+✓ normaliseLog > defaults timestamp to now when not provided [0.02ms]
+✓ normaliseLog > clamps message to 4096 chars [0.04ms]
+✓ normaliseLog > clamps service to 128 chars [0.02ms]
+✓ normaliseLog > defaults attributes to {}
+✓ normaliseLog > passes valid attributes through [0.08ms]
+✓ normaliseLog > drops function values from attributes [0.03ms]
+✓ normaliseLog > caps attributes at 64 keys [0.19ms]
+✓ normaliseMetric > uses provided name and value [0.06ms]
+✓ normaliseMetric > defaults non-finite value to 0 [0.03ms]
+✓ normaliseMetric > allows negative values [0.01ms]
+✓ normaliseMetric > defaults labels to {} [0.02ms]
+✓ normaliseMetric > passes string labels through [0.04ms]
+✓ normaliseMetric > clamps name to 256 chars [0.02ms]
+✓ normaliseTrace > preserves valid trace_id and span_id [0.07ms]
+✓ normaliseTrace > sets parent_id to null when not provided [0.05ms]
+✓ normaliseTrace > passes parent_id through when provided [0.02ms]
+✓ normaliseTrace > clamps duration to 0 minimum [0.01ms]
+✓ normaliseTrace > floors duration to integer [0.02ms]
+✓ normaliseTrace > generates fallback id if span_id contains invalid chars [0.01ms]
+
+tests/phase1/sqlite-store.test.ts:
+✓ SqliteStore – logs > inserts and queries a single log [1.11ms]
+✓ SqliteStore – logs > inserts a batch and returns all rows [1.37ms]
+✓ SqliteStore – logs > returns rows newest-first [0.70ms]
+✓ SqliteStore – logs > filters by service [0.59ms]
+✓ SqliteStore – logs > filters by level [0.64ms]
+✓ SqliteStore – logs > filters by time range [0.52ms]
+✓ SqliteStore – logs > respects limit [0.56ms]
+✓ SqliteStore – logs > skips duplicate ids (idempotent insert) [0.81ms]
+✓ SqliteStore – logs > round-trips attributes as JSON [0.39ms]
+✓ SqliteStore – metrics > inserts and queries a single metric [0.42ms]
+✓ SqliteStore – metrics > inserts a batch [0.80ms]
+✓ SqliteStore – metrics > returns rows oldest-first (asc timestamp) [0.35ms]
+✓ SqliteStore – metrics > returns distinct metric names [0.54ms]
+✓ SqliteStore – metrics > round-trips labels as JSON [0.50ms]
+✓ SqliteStore – traces > inserts and queries a single span [0.43ms]
+✓ SqliteStore – traces > filters by trace_id [0.30ms]
+✓ SqliteStore – traces > skips duplicate span_ids (idempotent insert) [0.61ms]
+✓ SqliteStore – traces > preserves parent_id null [0.38ms]
+✓ SqliteStore – traces > preserves parent_id value [0.43ms]
+✓ SqliteStore – executeSql > runs a SELECT query and returns columns + rows [0.84ms]
+✓ SqliteStore – executeSql > returns empty result for no rows [0.45ms]
+✓ SqliteStore – executeSql > rejects INSERT statements [0.39ms]
+✓ SqliteStore – executeSql > rejects UPDATE statements [0.04ms]
+✓ SqliteStore – executeSql > rejects DROP statements [0.13ms]
+✓ SqliteStore – executeSql > allows WITH (CTE) queries [0.11ms]
+✓ SqliteStore – collectStats > returns zeroes on empty store [0.35ms]
+✓ SqliteStore – collectStats > counts inserted data correctly [1.10ms]
+✓ SqliteStore – collectStats > only counts last_1h logs correctly [0.54ms]
+
+tests/phase1/api.test.ts:
+[tiradata] storage: SQLite (:memory:)
+<-- GET /api/health
+--> GET /api/health 200 0ms
+✓ GET /api/health > returns 200 with status ok [0.42ms]
+<-- GET /api/stats
+--> GET /api/stats 200 1ms
+✓ GET /api/stats > returns 200 with expected shape [0.36ms]
+<-- POST /api/ingest/log
+--> POST /api/ingest/log 202 0ms
+✓ POST /api/ingest/log > returns 202 for valid payload [0.13ms]
+<-- POST /api/ingest/log
+--> POST /api/ingest/log 202 0ms
+✓ POST /api/ingest/log > returns 202 with minimal payload (only message) [0.06ms]
+<-- POST /api/ingest/log
+--> POST /api/ingest/log 400 0ms
+✓ POST /api/ingest/log > returns 400 for invalid JSON [0.11ms]
+<-- POST /api/ingest/metric
+--> POST /api/ingest/metric 202 0ms
+✓ POST /api/ingest/metric > returns 202 for valid payload [0.15ms]
+<-- POST /api/ingest/metric
+--> POST /api/ingest/metric 202 0ms
+✓ POST /api/ingest/metric > returns 202 with minimal payload [0.06ms]
+<-- POST /api/ingest/trace
+--> POST /api/ingest/trace 202 0ms
+✓ POST /api/ingest/trace > returns 202 for valid payload [0.11ms]
+<-- POST /api/ingest/trace
+--> POST /api/ingest/trace 202 0ms
+✓ POST /api/ingest/trace > returns 202 with parent span [0.08ms]
+<-- GET /api/logs
+--> GET /api/logs 200 0ms
+✓ GET /api/logs > returns 200 with data and count [0.16ms]
+<-- GET /api/logs?service=test-api&level=info&limit=5
+--> GET /api/logs?service=test-api&level=info&limit=5 200 1ms
+✓ GET /api/logs > accepts filter query params without error [0.16ms]
+<-- GET /api/metrics
+--> GET /api/metrics 200 0ms
+✓ GET /api/metrics > returns 200 with data and count [0.18ms]
+<-- GET /api/metrics?name=http.request.duration&limit=10
+--> GET /api/metrics?name=http.request.duration&limit=10 200 0ms
+✓ GET /api/metrics > accepts name filter [0.15ms]
+<-- GET /api/metrics/names
+--> GET /api/metrics/names 200 0ms
+✓ GET /api/metrics/names > returns 200 with data array [0.11ms]
+<-- GET /api/traces
+--> GET /api/traces 200 0ms
+✓ GET /api/traces > returns 200 with data and count [0.17ms]
+<-- GET /api/traces?trace_id=trace-api-test
+--> GET /api/traces?trace_id=trace-api-test 200 0ms
+✓ GET /api/traces > accepts trace_id filter [0.15ms]
+<-- POST /api/query/sql
+--> POST /api/query/sql 200 1ms
+✓ POST /api/query/sql > executes a valid SELECT and returns result shape [0.17ms]
+<-- POST /api/query/sql
+--> POST /api/query/sql 400 0ms
+✓ POST /api/query/sql > blocks INSERT statements — returns 400 [0.15ms]
+<-- POST /api/query/sql
+--> POST /api/query/sql 400 0ms
+✓ POST /api/query/sql > blocks DROP statements — returns 400 [0.12ms]
+<-- POST /api/query/sql
+--> POST /api/query/sql 400 0ms
+✓ POST /api/query/sql > returns 400 when sql field is missing [0.05ms]
+<-- POST /api/query/sql
+--> POST /api/query/sql 400 0ms
+✓ POST /api/query/sql > returns 400 for malformed JSON [0.05ms]
+<-- POST /api/query/sql
+--> POST /api/query/sql 200 0ms
+✓ POST /api/query/sql > allows WITH (CTE) queries [0.08ms]
+
+ 114 pass
+ 0 fail
+ 294 expect() calls
+Ran 114 tests across 6 files. [1.55s]
+hy4-mac-002@HY4-MAC-4 tiradata % 

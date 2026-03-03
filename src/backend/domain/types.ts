@@ -55,6 +55,11 @@ export interface IngestTracePayload {
   attributes?: Record<string, unknown>
 }
 
+export interface PaginatedResponse<T> {
+  data: T[]
+  count: number // Total matching records for pagination
+}
+
 // ─── Query ────────────────────────────────────────────────────────────────────
 
 export interface SqlQueryResult {

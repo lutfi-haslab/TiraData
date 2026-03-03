@@ -1,11 +1,9 @@
-import { Database } from 'bun:sqlite'
-import { drizzle, type BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite'
-import {
-  and, asc, count, countDistinct, desc, eq, gte, lte, sql,
-} from 'drizzle-orm'
+import { Pool } from 'pg'
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
+import { and, asc, count, countDistinct, desc, eq, gte, lte, sql } from 'drizzle-orm'
 
-import { logs, metrics, traces, schema } from '../db/schema.sqlite'
-import type { SqliteSchema } from '../db/schema.sqlite'
+import { logs, metrics, traces, schema } from '../db/schema.pg'
+import type { PgSchema } from '../db/schema.pg'
 import type { IStore, LogQueryParams, MetricQueryParams, TraceQueryParams, TtlDeleteResult } from '../../domain/store.interface'
 import type { LogEntry, MetricEntry, SqlQueryResult, SystemStats, TraceEntry } from '../../domain/types'
 
@@ -13,111 +11,111 @@ import type { LogEntry, MetricEntry, SqlQueryResult, SystemStats, TraceEntry } f
 
 const startMs = Date.now()
 
-// ─── DDL (run once on startup) ────────────────────────────────────────────────
-// Drizzle does not auto-create tables — we push DDL via drizzle-kit or here directly.
+// ─── DDL (idempotent setup) ───────────────────────────────────────────────────
 
 const DDL = /* sql */`
   CREATE TABLE IF NOT EXISTS logs (
-    id        TEXT    PRIMARY KEY,
-    timestamp INTEGER NOT NULL,
-    level     TEXT    NOT NULL,
-    service   TEXT    NOT NULL,
-    message   TEXT    NOT NULL,
-    attributes TEXT   NOT NULL DEFAULT '{}'
+    id         VARCHAR(128) PRIMARY KEY,
+    timestamp  BIGINT       NOT NULL,
+    level      VARCHAR(16)  NOT NULL,
+    service    VARCHAR(128) NOT NULL,
+    message    TEXT         NOT NULL,
+    attributes JSONB        NOT NULL DEFAULT '{}'
   );
+
   CREATE TABLE IF NOT EXISTS metrics (
-    timestamp INTEGER NOT NULL,
-    name      TEXT    NOT NULL,
-    value     REAL    NOT NULL,
-    labels    TEXT    NOT NULL DEFAULT '{}'
+    timestamp BIGINT            NOT NULL,
+    name      VARCHAR(256)      NOT NULL,
+    value     DOUBLE PRECISION  NOT NULL,
+    labels    JSONB             NOT NULL DEFAULT '{}'
   );
+
   CREATE TABLE IF NOT EXISTS traces (
-    trace_id   TEXT    NOT NULL,
-    span_id    TEXT    NOT NULL PRIMARY KEY,
-    parent_id  TEXT,
-    start_time INTEGER NOT NULL,
-    duration   INTEGER NOT NULL,
-    name       TEXT    NOT NULL,
-    attributes TEXT    NOT NULL DEFAULT '{}'
+    trace_id   VARCHAR(128) NOT NULL,
+    span_id    VARCHAR(128) PRIMARY KEY,
+    parent_id  VARCHAR(128),
+    start_time BIGINT       NOT NULL,
+    duration   BIGINT       NOT NULL,
+    name       VARCHAR(256) NOT NULL,
+    attributes JSONB        NOT NULL DEFAULT '{}'
   );
+
+  -- Covering + GIN indexes for Postgres
   CREATE INDEX IF NOT EXISTS idx_logs_ts      ON logs    (timestamp DESC);
   CREATE INDEX IF NOT EXISTS idx_logs_svc_ts  ON logs    (service, timestamp DESC);
   CREATE INDEX IF NOT EXISTS idx_logs_lvl_ts  ON logs    (level, timestamp DESC);
+  CREATE INDEX IF NOT EXISTS idx_logs_attrs   ON logs    USING GIN (attributes);
   CREATE INDEX IF NOT EXISTS idx_metrics_ts   ON metrics (name, timestamp DESC);
+  CREATE INDEX IF NOT EXISTS idx_metrics_lbl  ON metrics USING GIN (labels);
   CREATE INDEX IF NOT EXISTS idx_traces_ts    ON traces  (start_time DESC);
   CREATE INDEX IF NOT EXISTS idx_traces_id    ON traces  (trace_id);
 `
 
-// ─── SQLite Store (Drizzle) ───────────────────────────────────────────────────
+// ─── PostgreSQL Store (Drizzle + pg) ─────────────────────────────────────────
 
-export class SqliteStore implements IStore {
-  private readonly client: Database
-  private readonly db: BunSQLiteDatabase<SqliteSchema>
+export class PostgresStore implements IStore {
+  private readonly pool: Pool
+  private readonly db: NodePgDatabase<PgSchema>
 
-  constructor(path: string = Bun.env.DB_PATH ?? 'tiradata.db') {
-    this.client = new Database(path)
+  constructor(connectionString?: string) {
+    const url = connectionString ?? Bun.env.DATABASE_URL ?? 'postgres://localhost:5432/tiradata'
 
-    // Performance PRAGMAs
-    this.client.run('PRAGMA journal_mode = WAL;')
-    this.client.run('PRAGMA synchronous   = NORMAL;')
-    this.client.run('PRAGMA cache_size    = -64000;')
-    this.client.run('PRAGMA temp_store    = MEMORY;')
-    this.client.run('PRAGMA mmap_size     = 268435456;')
+    this.pool = new Pool({
+      connectionString: url,
+      max: 10,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 5_000,
+    })
 
-    // Apply schema
-    this.client.exec(DDL)
+    this.db = drizzle(this.pool, { schema })
+  }
 
-    this.db = drizzle(this.client, { schema })
+  /** Must be called once after construction to apply DDL. */
+  async init(): Promise<void> {
+    await this.pool.query(DDL)
   }
 
   // ─── Write ──────────────────────────────────────────────────────────────────
 
   async insertLogs(batch: LogEntry[]): Promise<void> {
     if (batch.length === 0) return
-    // Drizzle batch insert inside a transaction for performance
-    this.client.transaction(() => {
-      for (const row of batch) {
-        this.db.insert(logs).values({
-          id:         row.id,
-          timestamp:  row.timestamp,
-          level:      row.level,
-          service:    row.service,
-          message:    row.message,
-          attributes: JSON.stringify(row.attributes),
-        }).onConflictDoNothing().run()
-      }
-    })()
+    await this.db.insert(logs).values(
+      batch.map((row) => ({
+        id:         row.id,
+        timestamp:  row.timestamp,
+        level:      row.level,
+        service:    row.service,
+        message:    row.message,
+        attributes: row.attributes,
+      }))
+    ).onConflictDoNothing()
   }
 
   async insertMetrics(batch: MetricEntry[]): Promise<void> {
     if (batch.length === 0) return
-    this.client.transaction(() => {
-      for (const row of batch) {
-        this.db.insert(metrics).values({
-          timestamp: row.timestamp,
-          name:      row.name,
-          value:     row.value,
-          labels:    JSON.stringify(row.labels),
-        }).run()
-      }
-    })()
+    await this.db.insert(metrics).values(
+      batch.map((row) => ({
+        timestamp: row.timestamp,
+        name:      row.name,
+        value:     row.value,
+        labels:    row.labels,
+      }))
+    )
   }
 
   async insertTraces(batch: TraceEntry[]): Promise<void> {
     if (batch.length === 0) return
-    this.client.transaction(() => {
-      for (const row of batch) {
-        this.db.insert(traces).values({
-          traceId:    row.trace_id,
-          spanId:     row.span_id,
-          parentId:   row.parent_id ?? null,
-          startTime:  row.start_time,
-          duration:   row.duration,
-          name:       row.name,
-          attributes: JSON.stringify(row.attributes),
-        }).onConflictDoNothing().run()
-      }
-    })()
+    await this.db.insert(traces).values(
+      batch.map((row) => ({
+        traceId:    row.trace_id,
+        spanId:     row.span_id,
+        parentId:   row.parent_id ?? null,
+        startTime:  row.start_time,
+        duration:   row.duration,
+        name:       row.name,
+        attributes: row.attributes,
+      }))
+    ).onConflictDoNothing()
   }
 
   // ─── Read ────────────────────────────────────────────────────────────────────
@@ -135,15 +133,17 @@ export class SqliteStore implements IStore {
 
     const whereClause = conditions.length ? and(...conditions) : undefined
 
-    const [totalRes] = this.db.select({ n: count() }).from(logs).where(whereClause).all()
-    const rows = this.db
+    const [[{ n: total }]] = await Promise.all([
+      this.db.select({ n: count() }).from(logs).where(whereClause),
+    ])
+
+    const rows = await this.db
       .select()
       .from(logs)
       .where(whereClause)
       .orderBy(desc(logs.timestamp))
       .limit(limit)
       .offset(offset)
-      .all()
 
     const data = rows.map((r) => ({
       id: r.id,
@@ -151,10 +151,10 @@ export class SqliteStore implements IStore {
       level: r.level as LogEntry['level'],
       service: r.service,
       message: r.message,
-      attributes: JSON.parse(r.attributes) as Record<string, unknown>,
+      attributes: r.attributes as Record<string, unknown>,
     }))
 
-    return { data, count: totalRes.n }
+    return { data, count: Number(total) }
   }
 
   async queryMetrics(params: MetricQueryParams): Promise<import('../../domain/types').PaginatedResponse<MetricEntry>> {
@@ -169,32 +169,33 @@ export class SqliteStore implements IStore {
 
     const whereClause = conditions.length ? and(...conditions) : undefined
 
-    const [totalRes] = this.db.select({ n: count() }).from(metrics).where(whereClause).all()
-    const rows = this.db
+    const [[{ n: total }]] = await Promise.all([
+      this.db.select({ n: count() }).from(metrics).where(whereClause),
+    ])
+
+    const rows = await this.db
       .select()
       .from(metrics)
       .where(whereClause)
       .orderBy(asc(metrics.timestamp))
       .limit(limit)
       .offset(offset)
-      .all()
 
     const data = rows.map((r) => ({
       timestamp: r.timestamp,
       name: r.name,
       value: r.value,
-      labels: JSON.parse(r.labels) as Record<string, string>,
+      labels: r.labels as Record<string, string>,
     }))
 
-    return { data, count: totalRes.n }
+    return { data, count: Number(total) }
   }
 
   async metricNames(): Promise<string[]> {
-    const rows = this.db
+    const rows = await this.db
       .selectDistinct({ name: metrics.name })
       .from(metrics)
       .orderBy(asc(metrics.name))
-      .all()
     return rows.map((r) => r.name)
   }
 
@@ -210,15 +211,17 @@ export class SqliteStore implements IStore {
 
     const whereClause = conditions.length ? and(...conditions) : undefined
 
-    const [totalRes] = this.db.select({ n: count() }).from(traces).where(whereClause).all()
-    const rows = this.db
+    const [[{ n: total }]] = await Promise.all([
+      this.db.select({ n: count() }).from(traces).where(whereClause),
+    ])
+
+    const rows = await this.db
       .select()
       .from(traces)
       .where(whereClause)
       .orderBy(desc(traces.startTime))
       .limit(limit)
       .offset(offset)
-      .all()
 
     const data = rows.map((r) => ({
       trace_id: r.traceId,
@@ -227,26 +230,24 @@ export class SqliteStore implements IStore {
       start_time: r.startTime,
       duration: r.duration,
       name: r.name,
-      attributes: JSON.parse(r.attributes) as Record<string, unknown>,
+      attributes: r.attributes as Record<string, unknown>,
     }))
 
-    return { data, count: totalRes.n }
+    return { data, count: Number(total) }
   }
 
-  /** Raw SQL passthrough — SELECT / CTE only, for the query editor. */
+  /** Raw SQL passthrough — SELECT / CTE only. */
   async executeSql(sqlStr: string): Promise<SqlQueryResult> {
     const t0 = performance.now()
-    // Strip comments and whitespace to validate the first real statement
     const cleanSql = sqlStr.replace(/--.*$|\/\*[\s\S]*?\*\//gm, '').trim().toUpperCase()
-    
     if (!cleanSql.startsWith('SELECT') && !cleanSql.startsWith('WITH')) {
       throw new Error('Only SELECT / CTE queries are allowed')
     }
-    const rows = this.client.prepare(sqlStr).all() as Record<string, unknown>[]
+    const result = await this.pool.query(sqlStr)
     const durationMs = performance.now() - t0
-    if (rows.length === 0) return { columns: [], rows: [], rowCount: 0, durationMs }
-    const columns = Object.keys(rows[0])
-    return { columns, rows: rows.map((r) => columns.map((c) => r[c])), rowCount: rows.length, durationMs }
+    const columns = result.fields.map((f) => f.name)
+    const rows = result.rows.map((r) => columns.map((c) => r[c]))
+    return { columns, rows, rowCount: result.rowCount ?? rows.length, durationMs }
   }
 
   // ─── Stats ───────────────────────────────────────────────────────────────────
@@ -254,11 +255,13 @@ export class SqliteStore implements IStore {
   async collectStats(queueSize: number, queueCapacity: number): Promise<SystemStats> {
     const oneHourAgo = Date.now() - 60 * 60 * 1000
 
-    const [logTotal]   = this.db.select({ n: count() }).from(logs).all()
-    const [logHour]    = this.db.select({ n: count() }).from(logs).where(gte(logs.timestamp, oneHourAgo)).all()
-    const [metTotal]   = this.db.select({ n: count() }).from(metrics).all()
-    const [metSeries]  = this.db.select({ n: countDistinct(metrics.name) }).from(metrics).all()
-    const [trcTotal]   = this.db.select({ n: count() }).from(traces).all()
+    const [[logTotal], [logHour], [metTotal], [metSeries], [trcTotal]] = await Promise.all([
+      this.db.select({ n: count() }).from(logs),
+      this.db.select({ n: count() }).from(logs).where(gte(logs.timestamp, oneHourAgo)),
+      this.db.select({ n: count() }).from(metrics),
+      this.db.select({ n: countDistinct(metrics.name) }).from(metrics),
+      this.db.select({ n: count() }).from(traces),
+    ])
 
     return {
       logs:    { total: logTotal.n, last_1h: logHour.n },
@@ -273,8 +276,7 @@ export class SqliteStore implements IStore {
 
   async optimize(): Promise<{ durationMs: number }> {
     const t0 = performance.now()
-    this.client.run('PRAGMA optimize;')
-    this.client.run('VACUUM;')
+    await this.pool.query('VACUUM ANALYZE logs; VACUUM ANALYZE metrics; VACUUM ANALYZE traces;')
     return { durationMs: performance.now() - t0 }
   }
 
@@ -283,23 +285,21 @@ export class SqliteStore implements IStore {
     metricsBefore?: number
     tracesBefore?: number
   }): Promise<TtlDeleteResult> {
-    let deletedLogs = 0, deletedMetrics = 0, deletedTraces = 0
+    const results = await Promise.all([
+      params.logsBefore
+        ? this.db.delete(logs).where(lte(logs.timestamp, params.logsBefore)).returning({ id: logs.id })
+        : Promise.resolve([]),
+      params.metricsBefore
+        ? this.db.delete(metrics).where(lte(metrics.timestamp, params.metricsBefore)).returning({ name: metrics.name })
+        : Promise.resolve([]),
+      params.tracesBefore
+        ? this.db.delete(traces).where(lte(traces.startTime, params.tracesBefore)).returning({ spanId: traces.spanId })
+        : Promise.resolve([]),
+    ])
+    return { logs: results[0].length, metrics: results[1].length, traces: results[2].length }
+  }
 
-    this.client.transaction(() => {
-      if (params.logsBefore) {
-        const r = this.client.run(`DELETE FROM logs WHERE timestamp <= ${params.logsBefore}`)
-        deletedLogs = r.changes
-      }
-      if (params.metricsBefore) {
-        const r = this.client.run(`DELETE FROM metrics WHERE timestamp <= ${params.metricsBefore}`)
-        deletedMetrics = r.changes
-      }
-      if (params.tracesBefore) {
-        const r = this.client.run(`DELETE FROM traces WHERE start_time <= ${params.tracesBefore}`)
-        deletedTraces = r.changes
-      }
-    })()
-
-    return { logs: deletedLogs, metrics: deletedMetrics, traces: deletedTraces }
+  async end(): Promise<void> {
+    await this.pool.end()
   }
 }

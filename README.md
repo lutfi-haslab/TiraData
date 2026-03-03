@@ -56,11 +56,29 @@ React Frontend (Dashboard · Logs · Metrics · Traces · SQL Editor)
 bun install
 ```
 
+### Environment Variables
+
+| Variable           | Default                              | Description                             |
+| ------------------ | ------------------------------------ | --------------------------------------- |
+| `STORE`            | `sqlite`                             | Storage adapter: `sqlite` or `postgres` |
+| `DB_PATH`          | `tiradata.db`                        | SQLite database file path               |
+| `DATABASE_URL`     | `postgres://localhost:5432/tiradata` | PostgreSQL connection string            |
+| `PORT`             | `3000`                               | Backend port                            |
+| `TTL_LOGS_DAYS`    | `30`                                 | Log retention in days                   |
+| `TTL_METRICS_DAYS` | `90`                                 | Metric retention in days                |
+| `TTL_TRACES_DAYS`  | `7`                                  | Trace retention in days                 |
+
 ### Run (Development)
 
 ```bash
 # Start both frontend (Vite :5173) and backend (Bun :3000) concurrently
 npm run dev
+
+# Push schema to database (uses STORE env var)
+npm run db:push
+
+# Open Drizzle Studio (visual DB browser)
+npm run db:studio
 ```
 
 | Service     | URL                   |
@@ -89,14 +107,21 @@ src/
 │   ├── domain/
 │   │   ├── types.ts                        # Core domain types
 │   │   ├── id.ts                           # crypto.randomUUID() helper
-│   │   └── ring-buffer.ts                  # O(1) ring buffer (backpressure queue)
+│   │   ├── ring-buffer.ts                  # O(1) ring buffer (backpressure queue)
+│   │   └── store.interface.ts              # IStore — shared adapter contract
 │   ├── infrastructure/
+│   │   ├── db/
+│   │   │   ├── schema.sqlite.ts            # Drizzle SQLite table + index definitions
+│   │   │   └── schema.pg.ts               # Drizzle PostgreSQL table + index definitions
 │   │   ├── http/
-│   │   │   └── server.ts                   # Hono routes (ingest, query, health, stats)
+│   │   │   └── server.ts                   # Hono routes (ingest, query, admin)
 │   │   ├── queue/
 │   │   │   └── ingestion-queue.ts          # Async queue → batch DB writes
-│   │   └── sqlite/
-│   │       └── store.ts                    # SQLite store (WAL, prepared stmts, indexes)
+│   │   ├── sqlite/
+│   │   │   └── store.ts                    # SQLiteStore implements IStore (Drizzle)
+│   │   ├── postgres/
+│   │   │   └── store.ts                    # PostgresStore implements IStore (Drizzle + pg)
+│   │   └── store-factory.ts                # Picks adapter from STORE env var
 │   └── usecases/
 │       └── normalise.ts                    # Payload validation & sanitisation
 └── frontend/
@@ -228,16 +253,19 @@ CREATE TABLE traces (
 
 ## Development Notes
 
-- Backend files in `src/backend/` are excluded from `tsconfig.app.json` — Bun provides its own globals (`Bun`, `process`). VS Code will not type-check backend files; they are run directly by Bun.
+- **Adapter selection**: Set `STORE=postgres` and `DATABASE_URL=postgres://...` to use PostgreSQL. Default is SQLite.
+- **Schema management**: Run `npm run db:push` to sync the Drizzle schema to your database. Run `npm run db:studio` to open the visual browser.
+- **Backend type-checking**: `src/backend/` is excluded from `tsconfig.app.json` — Bun provides its own globals (`Bun`, `process`). Run backends directly via Bun.
 - The SQLite database file (`tiradata.db`) is created in the working directory on first run.
-- The ring buffer silently drops items when full and increments `queue.droppedCount`, which is surfaced in `/api/stats`.
+- The ring buffer silently drops items when full and increments `queue.droppedCount`, surfaced at `GET /api/admin/config`.
 
 ---
 
 ## Roadmap
 
-- [ ] **Phase 2** — Persistent WAL-based queue, PostgreSQL adapter
-- [ ] **Phase 2** — Trace waterfall view, metrics aggregation
+- [x] **Phase 1** — HTTP ingestion, memory queue, SQLite, SQL query editor, React UI
+- [x] **Phase 2** — Drizzle ORM, IStore interface, PostgreSQL adapter (`pg`), TTL cleanup, admin endpoints
+- [ ] **Phase 2+** — Persistent WAL queue (crash recovery), index optimization
 - [ ] **Phase 3** — gRPC ingestion, OpenTelemetry native receiver
 - [ ] **Phase 3** — Query result caching, retention/TTL cleanup job
 - [ ] **Phase 3** — API key authentication, RBAC

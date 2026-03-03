@@ -2,27 +2,30 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { IngestionQueue } from '../queue/ingestion-queue'
-import { SqliteStore } from '../sqlite/store'
+import { createStore } from '../store-factory'
 import { normaliseLog, normaliseMetric, normaliseTrace } from '../../usecases/normalise'
+import type { IStore } from '../../domain/store.interface'
 import type {
   IngestLogPayload,
   IngestMetricPayload,
   IngestTracePayload,
 } from '../../domain/types'
 
-// ─── Singleton Fixtures ───────────────────────────────────────────────────────
+// ─── Async Server Factory ─────────────────────────────────────────────────────
+// Must be async because createStore() awaits PostgresStore.init()
 
-const store = new SqliteStore()
+let _queue: IngestionQueue | null = null
+let _store: IStore | null = null
 
-const queue = new IngestionQueue(10_000, (logs, metrics, traces) => {
-  if (logs.length)    store.insertLogs(logs)
-  if (metrics.length) store.insertMetrics(metrics)
-  if (traces.length)  store.insertTraces(traces)
-})
+export const createServer = async () => {
+  _store = await createStore()
 
-// ─── Server Factory ───────────────────────────────────────────────────────────
+  _queue = new IngestionQueue(10_000, async (logs, metrics, traces) => {
+    if (logs.length)    await _store!.insertLogs(logs)
+    if (metrics.length) await _store!.insertMetrics(metrics)
+    if (traces.length)  await _store!.insertTraces(traces)
+  })
 
-export const createServer = () => {
   const app = new Hono()
 
   // ── Global middleware ──────────────────────────────────────────────────────
@@ -35,8 +38,8 @@ export const createServer = () => {
   )
 
   // ── Stats ──────────────────────────────────────────────────────────────────
-  app.get('/api/stats', (c) =>
-    c.json(store.collectStats(queue.size, queue.capacity))
+  app.get('/api/stats', async (c) =>
+    c.json(await _store!.collectStats(_queue!.size, _queue!.capacity))
   )
 
   // ── Ingestion ──────────────────────────────────────────────────────────────
@@ -45,9 +48,8 @@ export const createServer = () => {
     try { payload = await c.req.json() }
     catch { return c.json({ error: 'Invalid JSON' }, 400) }
 
-    const entry = normaliseLog(payload)
-    const accepted = queue.enqueueLog(entry)
-
+    const entry    = normaliseLog(payload)
+    const accepted = _queue!.enqueueLog(entry)
     return c.json({ success: true, id: entry.id, accepted }, accepted ? 202 : 429)
   })
 
@@ -56,9 +58,8 @@ export const createServer = () => {
     try { payload = await c.req.json() }
     catch { return c.json({ error: 'Invalid JSON' }, 400) }
 
-    const entry = normaliseMetric(payload)
-    const accepted = queue.enqueueMetric(entry)
-
+    const entry    = normaliseMetric(payload)
+    const accepted = _queue!.enqueueMetric(entry)
     return c.json({ success: true, accepted }, accepted ? 202 : 429)
   })
 
@@ -67,50 +68,48 @@ export const createServer = () => {
     try { payload = await c.req.json() }
     catch { return c.json({ error: 'Invalid JSON' }, 400) }
 
-    const entry = normaliseTrace(payload)
-    const accepted = queue.enqueueTrace(entry)
-
+    const entry    = normaliseTrace(payload)
+    const accepted = _queue!.enqueueTrace(entry)
     return c.json({ success: true, span_id: entry.span_id, accepted }, accepted ? 202 : 429)
   })
 
   // ── Query ──────────────────────────────────────────────────────────────────
-  app.get('/api/logs', (c) => {
+  app.get('/api/logs', async (c) => {
     const q = c.req.query()
-    const logs = store.queryLogs({
+    return c.json(await _store!.queryLogs({
       service: q.service,
-      level:   q.level,
-      from:    q.from   ? Number(q.from)   : undefined,
-      to:      q.to     ? Number(q.to)     : undefined,
-      limit:   q.limit  ? Number(q.limit)  : 200,
-      offset:  q.offset ? Number(q.offset) : 0,
-    })
-    return c.json({ data: logs, count: logs.length })
+      level: q.level,
+      from: q.from ? Number(q.from) : undefined,
+      to: q.to ? Number(q.to) : undefined,
+      limit: q.limit ? Number(q.limit) : 200,
+      offset: q.offset ? Number(q.offset) : 0,
+    }))
   })
 
-  app.get('/api/metrics', (c) => {
+  app.get('/api/metrics', async (c) => {
     const q = c.req.query()
-    const metrics = store.queryMetrics({
-      name:  q.name,
-      from:  q.from  ? Number(q.from)  : undefined,
-      to:    q.to    ? Number(q.to)    : undefined,
+    return c.json(await _store!.queryMetrics({
+      name: q.name,
+      from: q.from ? Number(q.from) : undefined,
+      to: q.to ? Number(q.to) : undefined,
       limit: q.limit ? Number(q.limit) : 500,
-    })
-    return c.json({ data: metrics, count: metrics.length })
+      offset: q.offset ? Number(q.offset) : 0,
+    }))
   })
 
-  app.get('/api/metrics/names', (c) =>
-    c.json({ data: store.metricNames() })
+  app.get('/api/metrics/names', async (c) =>
+    c.json({ data: await _store!.metricNames() })
   )
 
-  app.get('/api/traces', (c) => {
+  app.get('/api/traces', async (c) => {
     const q = c.req.query()
-    const traces = store.queryTraces({
+    return c.json(await _store!.queryTraces({
       trace_id: q.trace_id,
-      from:  q.from  ? Number(q.from)  : undefined,
-      to:    q.to    ? Number(q.to)    : undefined,
+      from: q.from ? Number(q.from) : undefined,
+      to: q.to ? Number(q.to) : undefined,
       limit: q.limit ? Number(q.limit) : 200,
-    })
-    return c.json({ data: traces, count: traces.length })
+      offset: q.offset ? Number(q.offset) : 0,
+    }))
   })
 
   app.post('/api/query/sql', async (c) => {
@@ -123,15 +122,50 @@ export const createServer = () => {
     }
 
     try {
-      const result = store.executeSql(body.sql)
+      const result = await _store!.executeSql(body.sql)
       return c.json(result)
     } catch (err) {
       return c.json({ error: (err as Error).message }, 400)
     }
   })
 
+  // ── Admin ──────────────────────────────────────────────────────────────────
+  app.post('/api/admin/optimize', async (c) => {
+    const result = await _store!.optimize()
+    return c.json({ success: true, ...result })
+  })
+
+  app.get('/api/admin/config', (c) =>
+    c.json({
+      adapter:      Bun.env.STORE ?? 'sqlite',
+      db_path:      Bun.env.DB_PATH ?? 'tiradata.db',
+      queue_size:   _queue!.size,
+      queue_cap:    _queue!.capacity,
+      queue_dropped: _queue!.dropped,
+    })
+  )
+
+  app.post('/api/admin/ttl/run', async (c) => {
+    const body = await c.req.json().catch(() => ({})) as Record<string, number>
+    const now  = Date.now()
+
+    // Body params take priority; env vars are the fallback defaults
+    const logsDays    = Number(body.logsDays    ?? Bun.env.TTL_LOGS_DAYS    ?? 30)
+    const metricsDays = Number(body.metricsDays ?? Bun.env.TTL_METRICS_DAYS ?? 90)
+    const tracesDays  = Number(body.tracesDays  ?? Bun.env.TTL_TRACES_DAYS  ?? 7)
+
+    const result = await _store!.deleteBefore({
+      logsBefore:    now - logsDays    * 86_400_000,
+      metricsBefore: now - metricsDays * 86_400_000,
+      tracesBefore:  now - tracesDays  * 86_400_000,
+    })
+
+    return c.json({ success: true, deleted: result, retention: { logsDays, metricsDays, tracesDays } })
+  })
+
   return app
 }
 
-// Export queue/store for graceful shutdown hooks
-export { queue, store }
+// ─── Accessors for graceful shutdown ─────────────────────────────────────────
+export const getQueue = () => _queue
+export const getStore = () => _store
