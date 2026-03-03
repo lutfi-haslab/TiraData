@@ -1,13 +1,18 @@
 # ⚡ Tiradata
 
-> Lightweight, self-hosted observability & SQL query platform.  
+> A lightweight, self-hosted alternative to **Datadog** and **Sentry**.  
 > Ingest logs, metrics, and traces — then query them with raw SQL.
 
 ---
 
-## Overview
+## Why TiraData?
 
-Tiradata is a **vendor-independent** observability core built to run on a single machine with minimal operational overhead. It is designed to teach you how observability actually works internally, bottom-up.
+TiraData is a **vendor-independent** observability platform built for developers who want the power of Datadog or Sentry without the complexity or cost of SaaS. It provides a unified view of:
+
+- 🪵 **Logs**: Structured logging with real-time tailing.
+- 📈 **Metrics**: High-performance time-series data and visualization.
+- 🕵️ **Distributed Tracing**: APM with nested timelines and cross-service visibility.
+- 🔍 **SQL First**: No proprietary query language. Use raw SQL for everything.
 
 ```
 SDK / curl
@@ -270,4 +275,4 @@ CREATE TABLE traces (
 - [x] **Phase 3** — Query result caching, automated background TTL cleanup job
 - [x] **Phase 3** — API key authentication, RBAC
 - [x] **Phase 4** — Real-time Log Tailing (WebSockets), Alerting Engine, Service Map
-- [ ] **Phase 5** — Multi-Project Isolation, Dynamic API Keys, Advanced UI (React Flow, Alerting Dashboard)
+- [x] **Phase 5** — Advanced APM (Nested Timelines, Distributed Tracing), Multi-Project Isolation, Dynamic API Keys
